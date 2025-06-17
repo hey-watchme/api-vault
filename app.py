@@ -6,7 +6,7 @@
 #   4b) /status (+HTML / StaticFiles) : ディレクトリ一覧 & ファイル配信
 #   5) /upload/analysis/emotion-timeline : ChatGPT 分析結果 JSON 保存
 
-from fastapi import FastAPI, UploadFile, File, Form, HTTPException
+from fastapi import FastAPI, UploadFile, File, Form, HTTPException, Query
 from fastapi.responses import JSONResponse, FileResponse, HTMLResponse
 from fastapi.staticfiles import StaticFiles
 from datetime import datetime
@@ -15,6 +15,8 @@ from typing import List
 import pytz
 import os
 import shutil
+import json
+import urllib.parse
 
 # =========================================
 # 基本設定
@@ -102,11 +104,79 @@ async def upload_prompt(
     return JSONResponse({"status": "ok", "path": save_path})
 
 # =========================================
-# 4b) 正しいツリー表示版 /status HTML
+# 新しいファイル関連エンドポイント
 # =========================================
-from datetime import datetime
-from pathlib import Path
-from typing import List
+
+@app.get("/download-file")
+async def download_file_by_path(file_path: str = Query(...)):
+    """ファイルパスを指定してファイルをダウンロード"""
+    full_path = os.path.join(BASE_DIR, file_path)
+    if not os.path.exists(full_path):
+        raise HTTPException(status_code=404, detail="File not found")
+    
+    filename = os.path.basename(full_path)
+    
+    # ファイルタイプに応じたmedia_typeを設定
+    if filename.endswith('.wav'):
+        media_type = "audio/wav"
+    elif filename.endswith('.json'):
+        media_type = "application/json"
+    else:
+        media_type = "application/octet-stream"
+    
+    return FileResponse(full_path, media_type=media_type, filename=filename)
+
+@app.get("/view-file")
+async def view_file_content(file_path: str = Query(...)):
+    """JSONファイルの内容を表示"""
+    full_path = os.path.join(BASE_DIR, file_path)
+    if not os.path.exists(full_path):
+        raise HTTPException(status_code=404, detail="File not found")
+    
+    if not file_path.endswith('.json'):
+        raise HTTPException(status_code=400, detail="Only JSON files can be viewed")
+    
+    try:
+        with open(full_path, 'r', encoding='utf-8') as f:
+            content = json.load(f)
+        
+        html = f"""
+        <!DOCTYPE html>
+        <html>
+        <head>
+            <title>{os.path.basename(file_path)} - WatchMe Vault</title>
+            <style>
+                body {{ font-family: 'Monaco', 'Menlo', monospace; margin: 20px; background: #f5f5f5; }}
+                .header {{ background: white; padding: 20px; border-radius: 8px; margin-bottom: 20px; box-shadow: 0 2px 4px rgba(0,0,0,0.1); }}
+                .content {{ background: white; padding: 20px; border-radius: 8px; box-shadow: 0 2px 4px rgba(0,0,0,0.1); }}
+                pre {{ background: #f8f8f8; padding: 15px; border-radius: 5px; overflow-x: auto; }}
+                .back-link {{ color: #007bff; text-decoration: none; }}
+                .back-link:hover {{ text-decoration: underline; }}
+            </style>
+        </head>
+        <body>
+            <div class="header">
+                <h2>📄 {os.path.basename(file_path)}</h2>
+                <p><strong>ファイルパス:</strong> {file_path}</p>
+                <a href="/status" class="back-link">← データ一覧に戻る</a>
+            </div>
+            <div class="content">
+                <h3>ファイル内容:</h3>
+                <pre>{json.dumps(content, ensure_ascii=False, indent=2)}</pre>
+            </div>
+        </body>
+        </html>
+        """
+        return HTMLResponse(html)
+    
+    except json.JSONDecodeError:
+        raise HTTPException(status_code=400, detail="Invalid JSON file")
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Error reading file: {str(e)}")
+
+# =========================================
+# 4b) 改良版 /status HTML（リンク付き）
+# =========================================
 
 def _sort_dates(dates: List[str]) -> List[str]:
     def to_dt(s: str):
@@ -116,38 +186,123 @@ def _sort_dates(dates: List[str]) -> List[str]:
             return datetime.min
     return sorted(dates, key=to_dt, reverse=True)
 
-def _walk_dir(path: Path, indent_lvl: int, lines: List[str]):
+def _get_relative_path(full_path: Path, base_path: Path) -> str:
+    """ベースパスからの相対パスを取得"""
+    return str(full_path.relative_to(base_path))
+
+def _walk_dir_with_links(path: Path, base_path: Path, indent_lvl: int, lines: List[str]):
     ind = "    " * indent_lvl
+    
     # 1) フォルダを先に昇順で
     for d in sorted([p for p in path.iterdir() if p.is_dir()]):
-        lines.append(f"{ind}📂 {d.name}/")
-        _walk_dir(d, indent_lvl + 1, lines)          # 再帰で深掘り
+        lines.append(f'{ind}📂 <span style="font-weight: bold;">{d.name}/</span>')
+        _walk_dir_with_links(d, base_path, indent_lvl + 1, lines)
+    
     # 2) ファイルを後に昇順で
     for f in sorted([p for p in path.iterdir() if p.is_file()]):
-        lines.append(f"{ind}📄 {f.name}")
+        relative_path = _get_relative_path(f, base_path)
+        encoded_path = urllib.parse.quote(relative_path)
+        
+        # ファイルタイプに応じたリンクを生成
+        if f.name.endswith('.wav'):
+            download_link = f'/download-file?file_path={encoded_path}'
+            file_link = f'<a href="{download_link}" style="color: #28a745; text-decoration: none;" title="WAVファイルをダウンロード">🎵 {f.name}</a>'
+        elif f.name.endswith('.json'):
+            view_link = f'/view-file?file_path={encoded_path}'
+            download_link = f'/download-file?file_path={encoded_path}'
+            file_link = f'<a href="{view_link}" style="color: #007bff; text-decoration: none;" title="JSONファイルを表示">📄 {f.name}</a> <a href="{download_link}" style="color: #6c757d; text-decoration: none; font-size: 0.8em;" title="ダウンロード">[DL]</a>'
+        else:
+            download_link = f'/download-file?file_path={encoded_path}'
+            file_link = f'<a href="{download_link}" style="color: #6c757d; text-decoration: none;" title="ファイルをダウンロード">📄 {f.name}</a>'
+        
+        lines.append(f"{ind}{file_link}")
 
 @app.get("/status", response_class=HTMLResponse)
 async def status_all():
     if not os.path.exists(BASE_DIR):
         return "<h2>データフォルダが存在しません</h2>"
 
-    html: List[str] = ["<h2>全ユーザーのデータ一覧</h2><pre>"]
+    html_lines = [
+        """
+        <!DOCTYPE html>
+        <html>
+        <head>
+            <title>WatchMe Vault - データ一覧</title>
+            <style>
+                body { 
+                    font-family: 'Monaco', 'Menlo', monospace; 
+                    margin: 20px; 
+                    background: #f5f5f5; 
+                    line-height: 1.6;
+                }
+                .header { 
+                    background: white; 
+                    padding: 20px; 
+                    border-radius: 8px; 
+                    margin-bottom: 20px; 
+                    box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+                }
+                .content { 
+                    background: white; 
+                    padding: 20px; 
+                    border-radius: 8px; 
+                    box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+                }
+                pre { 
+                    background: #f8f8f8; 
+                    padding: 15px; 
+                    border-radius: 5px; 
+                    overflow-x: auto;
+                    font-size: 14px;
+                }
+                a { text-decoration: none; }
+                a:hover { text-decoration: underline; }
+                .legend {
+                    background: #e9ecef;
+                    padding: 10px;
+                    border-radius: 5px;
+                    margin-bottom: 15px;
+                    font-size: 0.9em;
+                }
+            </style>
+        </head>
+        <body>
+            <div class="header">
+                <h2>🗂️ WatchMe Vault - データ一覧</h2>
+                <div class="legend">
+                    <strong>操作方法:</strong>
+                    🎵 WAVファイル（クリックでダウンロード） | 
+                    📄 JSONファイル（クリックで内容表示、[DL]でダウンロード）
+                </div>
+            </div>
+            <div class="content">
+                <pre>
+        """
+    ]
+    
     base = Path(BASE_DIR)
-
+    
     # ── USER 層 ──
     for user_dir in sorted(p for p in base.iterdir() if p.is_dir()):
-        html.append(f"👤 {user_dir.name}/")
-
+        html_lines.append(f'👤 <span style="font-weight: bold; color: #007bff;">{user_dir.name}/</span>')
+        
         # ── DATE 層 (降順) ──
         for date_name in _sort_dates([d.name for d in user_dir.iterdir() if d.is_dir()]):
             date_path = user_dir / date_name
-            html.append(f"  📅 {date_name}/")
-            _walk_dir(date_path, 2, html)            # indent_lvl=2 で再帰開始
-            html.append("")
-
-    html.append("</pre>")
-    return "\n".join(html)
-
+            html_lines.append(f'  📅 <span style="font-weight: bold; color: #28a745;">{date_name}/</span>')
+            _walk_dir_with_links(date_path, base, 2, html_lines)
+            html_lines.append("")
+    
+    html_lines.extend([
+        """
+                </pre>
+            </div>
+        </body>
+        </html>
+        """
+    ])
+    
+    return "\n".join(html_lines)
 
 # =========================================
 # 5) ChatGPT 分析 JSON アップロード
