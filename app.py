@@ -325,3 +325,27 @@ async def upload_emotion_timeline(
         shutil.copyfileobj(file.file, buf)
 
     return JSONResponse({"status": "ok", "path": save_path})
+
+# =========================================
+# 🔊 SEDタイムライン JSON アップロード
+#     (/upload/analysis/sed-timeline)
+# =========================================
+@app.post("/upload/analysis/sed-timeline")
+async def upload_sed_timeline(
+    file: UploadFile = File(...),
+    user_id: str = Form(...),
+    date: str = Form(...),            # 例: "2025-06-18"
+    time_block: str = Form(...),      # 例: "00-00"
+):
+    if not file.filename.endswith(".json"):
+        raise HTTPException(status_code=400, detail="Only .json files allowed")
+
+    save_dir = os.path.join(BASE_DIR, user_id, date, "sed")
+    os.makedirs(save_dir, exist_ok=True)
+
+    save_path = os.path.join(save_dir, f"{time_block}.json")
+    
+    with open(save_path, "wb") as buf:
+        shutil.copyfileobj(file.file, buf)
+
+    return JSONResponse({"status": "ok", "path": save_path})
