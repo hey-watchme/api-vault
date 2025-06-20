@@ -349,3 +349,26 @@ async def upload_sed_timeline(
         shutil.copyfileobj(file.file, buf)
 
     return JSONResponse({"status": "ok", "path": save_path})
+
+# =========================================
+# 🔊 SEDサマリー JSON アップロード
+#     (/upload/analysis/sed-summary)
+# =========================================
+@app.post("/upload/analysis/sed-summary")
+async def upload_sed_summary(
+    file: UploadFile = File(...),
+    user_id: str = Form(...),
+    date: str = Form(...)
+):
+    if not file.filename.endswith(".json"):
+        raise HTTPException(status_code=400, detail="Only .json files allowed")
+
+    save_dir = os.path.join(BASE_DIR, user_id, date, "sed-summary")
+    os.makedirs(save_dir, exist_ok=True)
+
+    save_path = os.path.join(save_dir, "result.json")
+    
+    with open(save_path, "wb") as buf:
+        shutil.copyfileobj(file.file, buf)
+
+    return JSONResponse({"status": "ok", "path": save_path})
