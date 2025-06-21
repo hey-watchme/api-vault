@@ -1,10 +1,36 @@
-# app.py ― WatchMe File Receiver
-#   1) /upload                        : 30 分スロット WAV 保存
-#   2) /upload-transcription          : 文字起こし JSON 保存
-#   3) /download                      : 個別 WAV 取得
-#   4a) /upload-prompt                : プロンプト JSON 保存
-#   4b) /status (+HTML / StaticFiles) : ディレクトリ一覧 & ファイル配信
-#   5) /upload/analysis/emotion-timeline : ChatGPT 分析結果 JSON 保存
+# =========================================
+# app.py ― WatchMe Vault API
+#
+# 本アプリケーションは、WatchMe プロジェクトにおける
+# 音声データと各種解析ファイルを保存・取得するための
+# FastAPI ベースのファイル受け渡しAPIです。
+#
+# 📦 名称：**WatchMe Vault API**
+# 📁 役割：音声ファイル（WAV）や解析結果（JSON）を
+#          ユーザー／日付単位のディレクトリ構成で管理し、
+#          iOSアプリ・Streamlit・Webダッシュボード間の
+#          データ授受を安全に行う
+#
+# 🔹 iOS録音アプリ用途：
+#     - 音声ファイル（WAV）の送信：`/upload`
+#
+# 🔹 Streamlitアプリ用途（音声解析・PoC）：
+#     - Whisper文字起こしJSONの送信：`/upload-transcription`
+#     - ChatGPT用プロンプト（emotion-timeline）送信：`/upload-prompt`
+#     - SEDタイムライン / SEDサマリーJSON送信：`/upload/analysis/sed-*`
+#     - 各種JSONやWAVの表示／取得：`/view-file`, `/download-file`
+#
+# 🔹 Web版ダッシュボード用途（React + Vite + Tailwind）：
+#     - 感情グラフの取得：`/api/users/{user_id}/logs/{date}/emotion-timeline`
+#     - 行動グラフ（SEDサマリー）の取得：`/api/users/{user_id}/logs/{date}/sed-summary`
+#     - これらのJSONは iOS / Streamlit 側から事前にアップロードされた分析結果
+#
+# 🔧 データ構造：
+#     BASE_DIR/user_id/YYYY-MM-DD/{raw, transcriptions, sed, prompt, emotion-timeline, sed-summary}/
+#     例: /home/ubuntu/data/data_accounts/user123/2025-06-21/sed-summary/result.json
+#
+# =========================================
+
 
 from fastapi import FastAPI, UploadFile, File, Form, HTTPException, Query
 from fastapi.responses import JSONResponse, FileResponse, HTMLResponse
@@ -305,7 +331,7 @@ async def status_all():
     return "\n".join(html_lines)
 
 # =========================================
-# 5) ChatGPT 分析 JSON アップロード
+# 5) 心理グラフ作成用 ChatGPT 分析 JSON アップロード
 #    (/upload/analysis/emotion-timeline)
 # =========================================
 @app.post("/upload/analysis/emotion-timeline")
@@ -327,7 +353,7 @@ async def upload_emotion_timeline(
     return JSONResponse({"status": "ok", "path": save_path})
 
 # =========================================
-# 🔊 SEDタイムライン JSON アップロード
+# 🔊 行動グラフ作成用 SEDタイムライン JSON アップロード
 #     (/upload/analysis/sed-timeline)
 # =========================================
 @app.post("/upload/analysis/sed-timeline")
@@ -351,7 +377,7 @@ async def upload_sed_timeline(
     return JSONResponse({"status": "ok", "path": save_path})
 
 # =========================================
-# 🔊 SEDサマリー JSON アップロード
+# 🔊 行動グラフ保存用 SEDサマリー JSON アップロード
 #     (/upload/analysis/sed-summary)
 # =========================================
 @app.post("/upload/analysis/sed-summary")
@@ -372,3 +398,29 @@ async def upload_sed_summary(
         shutil.copyfileobj(file.file, buf)
 
     return JSONResponse({"status": "ok", "path": save_path})
+
+# =========================================
+# 🔎 Dashboard Web用 行動グラフ表示用 SEDサマリー JSON 取得
+#     (/api/users/{user_id}/logs/{date}/sed-summary)
+# =========================================
+@app.get("/api/users/{user_id}/logs/{date}/sed-summary")
+async def get_sed_summary(user_id: str, date: str):
+    """
+    SED summary の result.json を返す GET API
+    例: /api/users/user123/logs/2025-06-21/sed-summary
+    """
+    file_path = os.path.join(BASE_DIR, user_id, date, "sed-summary", "result.json")
+
+    if not os.path.exists(file_path):
+        raise HTTPException(status_code=404, detail="SED summary file not found")
+
+    try:
+        with open(file_path, "r", encoding="utf-8") as f:
+            data = json.load(f)
+        return JSONResponse(content=data)
+
+    except json.JSONDecodeError:
+        raise HTTPException(status_code=400, detail="Invalid JSON format in result.json")
+
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Unexpected error: {str(e)}")
