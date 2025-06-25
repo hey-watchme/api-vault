@@ -6,25 +6,42 @@ WatchMe プロジェクト用のファイル受け渡しAPIです。
 
 ## プロジェクト構造
 
+### サーバー環境
 ```
-vault/
-├── watchme_api/          # FastAPIアプリケーション
+/home/ubuntu/
+├── watchme_api/          # GitHubリポジトリをクローンした場所
 │   ├── app.py           # メインAPIサーバー
 │   └── requirements.txt # 依存関係
-├── data/                # ローカル開発用データ（.gitignoreで除外）
-│   └── data_accounts/   # 実際のデータ構造をミラー
-├── .gitignore          # Git除外設定
-├── LOCAL_DEV.md        # ローカル開発ガイド
-└── README.md           # このファイル
+└── data/
+    └── data_accounts/   # 実際のデータストレージ
+```
+
+### ローカル開発環境
+```
+vault/                   # ローカル開発用コンテナ
+├── app.py              # メインAPIサーバー（GitHubから）
+├── requirements.txt    # 開発用依存関係
+├── requirements_server.txt # サーバー全パッケージリスト（参考用）
+├── data/               # ローカル開発用データ（.gitignoreで除外）
+│   └── data_accounts/  # 実際のデータ構造をミラー
+├── .gitignore         # Git除外設定
+├── LOCAL_DEV.md       # ローカル開発ガイド
+└── README.md          # このファイル
 ```
 
 ## 本番環境での起動
 
-サーバー上（本番環境）では従来通り：
+サーバー上（本番環境）では：
 
 ```bash
+# GitHubからクローン（初回のみ）
+git clone git@github.com:matsumotokaya/watchme-vault-api.git watchme_api
 cd watchme_api
+
+# 依存関係のインストール
 pip install -r requirements.txt
+
+# アプリケーション起動
 uvicorn app:app --reload --host 0.0.0.0 --port 8000
 ```
 
@@ -33,7 +50,8 @@ uvicorn app:app --reload --host 0.0.0.0 --port 8000
 ⚠️ **重要**: 本番環境を保護するため、ローカル開発時は必ず環境変数を設定してください。
 
 ```bash
-cd watchme_api
+# vaultディレクトリで作業
+cd vault
 
 # 依存関係のインストール（初回のみ）
 pip install -r requirements.txt

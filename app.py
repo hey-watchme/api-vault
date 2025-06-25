@@ -51,7 +51,7 @@ import urllib.parse
 # デフォルトは本番環境設定、ローカル開発時のみ環境変数で切り替え
 if os.getenv("WATCHME_LOCAL_DEV") == "1":
     # ローカル開発環境（環境変数明示時のみ）
-    BASE_DIR = str(Path(__file__).parent.parent / "data" / "data_accounts")
+    BASE_DIR = str(Path(__file__).parent / "data" / "data_accounts")
 else:
     # 本番環境（デフォルト）
     BASE_DIR = "/home/ubuntu/data/data_accounts"

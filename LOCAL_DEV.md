@@ -20,7 +20,8 @@ export WATCHME_LOCAL_DEV=1
 ### 2. アプリケーション起動
 
 ```bash
-cd watchme_api
+# vaultディレクトリで作業
+cd vault
 
 # 依存関係インストール（初回のみ）
 pip install -r requirements.txt
@@ -35,7 +36,9 @@ WATCHME_LOCAL_DEV=1 uvicorn app:app --reload --host 0.0.0.0 --port 8000
 
 ```
 vault/
-├── data/
+├── app.py               # メインAPIサーバー
+├── requirements.txt     # 開発用依存関係
+├── data/               # ローカル開発用データ
 │   └── data_accounts/
 │       └── user123/
 │           └── 2025-06-21/
@@ -45,9 +48,9 @@ vault/
 │               ├── emotion-timeline/ # 感情タイムライン
 │               ├── sed/              # SEDタイムライン
 │               └── sed-summary/      # SEDサマリー
-└── watchme_api/
-    ├── app.py
-    └── requirements.txt
+├── .gitignore
+├── LOCAL_DEV.md
+└── README.md
 ```
 
 ## 本番環境への安全なデプロイ
