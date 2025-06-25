@@ -1,0 +1,31 @@
+# ローカル開発用データディレクトリ（本番環境に影響しないよう除外）
+data/
+
+# Python関連
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+
+# 仮想環境
+venv/
+env/
+.venv/
+.env/
+
+# IDE関連
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# OS関連
+.DS_Store
+Thumbs.db
+
+# ログファイル
+*.log
+
+# 一時ファイル
+*.tmp
+*.temp
