@@ -197,3 +197,105 @@ git pull
 ```
 
 詳細は [LOCAL_DEV.md](LOCAL_DEV.md) を参照してください。
+
+## 🖥️ サーバー運用（本番環境）
+
+### systemd自動起動設定
+
+**サーバー情報:**
+- **SSH**: `ssh -i ~/watchme-key.pem ubuntu@3.24.16.82`
+- **URL**: https://api.hey-watch.me
+- **仮想環境**: `/home/ubuntu/venv_watchme/`
+
+**WatchMe Vault APIは既にsystemdサービスとして設定済みです。AWSインスタンス起動時に自動でAPIが起動します。**
+
+### サービス管理コマンド
+
+```bash
+# サービス状態確認
+sudo systemctl status watchme-vault-api.service
+
+# サービス停止
+sudo systemctl stop watchme-vault-api.service
+
+# サービス再起動
+sudo systemctl restart watchme-vault-api.service
+
+# サービス開始
+sudo systemctl start watchme-vault-api.service
+
+# ログ確認（リアルタイム）
+sudo journalctl -u watchme-vault-api.service -f
+
+# ログ確認（最新20行）
+sudo journalctl -u watchme-vault-api.service -n 20
+```
+
+### サービス設定ファイル
+
+**場所**: `/etc/systemd/system/watchme-vault-api.service`
+
+```ini
+[Unit]
+Description=WatchMe Vault API Server
+After=network.target
+Wants=network.target
+
+[Service]
+Type=simple
+User=ubuntu
+Group=ubuntu
+WorkingDirectory=/home/ubuntu/watchme_api
+Environment=PATH=/home/ubuntu/venv_watchme/bin:/usr/local/bin:/usr/bin:/bin
+Environment=PYTHONPATH=/home/ubuntu/venv_watchme/lib/python3.12/site-packages
+ExecStart=/home/ubuntu/venv_watchme/bin/uvicorn app:app --host 0.0.0.0 --port 8000
+Restart=always
+RestartSec=3
+StandardOutput=journal
+StandardError=journal
+SyslogIdentifier=watchme-vault-api
+
+[Install]
+WantedBy=multi-user.target
+```
+
+### 本番環境でのコード更新手順
+
+```bash
+# 1. サーバーにSSH接続
+ssh -i ~/watchme-key.pem ubuntu@3.24.16.82
+
+# 2. 最新コードを取得
+cd /home/ubuntu/watchme_api
+git pull origin main
+
+# 3. サービス再起動（必要に応じて）
+sudo systemctl restart watchme-vault-api.service
+
+# 4. 動作確認
+sudo systemctl status watchme-vault-api.service
+curl -s http://localhost:8000/status | head -5
+```
+
+### トラブルシューティング
+
+#### APIが起動しない場合
+```bash
+# 1. ログを確認
+sudo journalctl -u watchme-vault-api.service -n 50
+
+# 2. ポート使用状況確認
+sudo lsof -i :8000
+
+# 3. 手動起動テスト
+cd /home/ubuntu/watchme_api
+source /home/ubuntu/venv_watchme/bin/activate
+uvicorn app:app --host 0.0.0.0 --port 8000
+```
+
+#### サービス設定変更後
+```bash
+# 設定ファイル変更後は必須
+sudo systemctl daemon-reload
+sudo systemctl restart watchme-vault-api.service
+```
