@@ -21,7 +21,7 @@
 #     - 各種JSONやWAVの表示／取得：`/view-file`, `/download-file`
 #
 # 🔹 Web版ダッシュボード用途（React + Vite + Tailwind）：
-#     - 感情グラフの取得：`/api/users/{user_id}/logs/{date}/emotion-timeline`
+#     - 感情グラフの取得：`/api/users/{user_id}/logs/{date}/emotion-timeline` ← NEW!
 #     - 行動グラフ（SEDサマリー）の取得：`/api/users/{user_id}/logs/{date}/sed-summary`
 #     - これらのJSONは iOS / Streamlit 側から事前にアップロードされた分析結果
 #
@@ -405,6 +405,32 @@ async def upload_sed_summary(
         shutil.copyfileobj(file.file, buf)
 
     return JSONResponse({"status": "ok", "path": save_path})
+
+# =========================================
+# 🔎 Dashboard Web用 感情タイムライン JSON 取得
+#     (/api/users/{user_id}/logs/{date}/emotion-timeline)
+# =========================================
+@app.get("/api/users/{user_id}/logs/{date}/emotion-timeline")
+async def get_emotion_timeline(user_id: str, date: str):
+    """
+    感情タイムラインの emotion-timeline.json を返す GET API
+    例: /api/users/user123/logs/2025-06-25/emotion-timeline
+    """
+    file_path = os.path.join(BASE_DIR, user_id, date, "emotion-timeline", "emotion-timeline.json")
+
+    if not os.path.exists(file_path):
+        raise HTTPException(status_code=404, detail="Emotion timeline file not found")
+
+    try:
+        with open(file_path, "r", encoding="utf-8") as f:
+            data = json.load(f)
+        return JSONResponse(content=data)
+
+    except json.JSONDecodeError:
+        raise HTTPException(status_code=400, detail="Invalid JSON format in emotion-timeline.json")
+
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Unexpected error: {str(e)}")
 
 # =========================================
 # 🔎 Dashboard Web用 行動グラフ表示用 SEDサマリー JSON 取得
