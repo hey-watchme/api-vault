@@ -457,3 +457,146 @@ async def get_sed_summary(user_id: str, date: str):
 
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Unexpected error: {str(e)}")
+
+# =========================================
+# 🎵 OpenSMILE特徴量 個別JSONファイル アップロード 
+#     (/upload/analysis/opensmile-features)
+# =========================================
+@app.post("/upload/analysis/opensmile-features")
+async def upload_opensmile_features(
+    file: UploadFile = File(...),
+    user_id: str = Form(...),
+    date: str = Form(...),            # 例: "2025-06-25"
+    time_slot: str = Form(...),       # 例: "20-30"
+):
+    """
+    OpenSMILE API から生成された個別時間スロットの特徴量JSONファイルをアップロード
+    保存先: /home/ubuntu/data/data_accounts/{user_id}/{date}/opensmile/{time_slot}.json
+    """
+    if not file.filename.endswith(".json"):
+        raise HTTPException(status_code=400, detail="Only .json files allowed")
+
+    save_dir = os.path.join(BASE_DIR, user_id, date, "opensmile")
+    os.makedirs(save_dir, exist_ok=True)
+
+    save_path = os.path.join(save_dir, f"{time_slot}.json")
+    
+    with open(save_path, "wb") as buf:
+        shutil.copyfileobj(file.file, buf)
+
+    return JSONResponse({"status": "ok", "path": save_path})
+
+# =========================================
+# 🎵 OpenSMILE特徴量 統合JSONファイル アップロード 
+#     (/upload/analysis/opensmile-summary)
+# =========================================
+@app.post("/upload/analysis/opensmile-summary")
+async def upload_opensmile_summary(
+    file: UploadFile = File(...),
+    user_id: str = Form(...),
+    date: str = Form(...)
+):
+    """
+    OpenSMILE API から生成された統合特徴量JSONファイルをアップロード
+    保存先: /home/ubuntu/data/data_accounts/{user_id}/{date}/opensmile/vault_features_timeline.json
+    """
+    if not file.filename.endswith(".json"):
+        raise HTTPException(status_code=400, detail="Only .json files allowed")
+
+    save_dir = os.path.join(BASE_DIR, user_id, date, "opensmile")
+    os.makedirs(save_dir, exist_ok=True)
+
+    save_path = os.path.join(save_dir, "vault_features_timeline.json")
+    
+    with open(save_path, "wb") as buf:
+        shutil.copyfileobj(file.file, buf)
+
+    return JSONResponse({"status": "ok", "path": save_path})
+
+# =========================================
+# 🔎 OpenSMILE特徴量 個別JSONファイル取得
+#     (/api/users/{user_id}/logs/{date}/opensmile/{time_slot})
+# =========================================
+@app.get("/api/users/{user_id}/logs/{date}/opensmile/{time_slot}")
+async def get_opensmile_features(user_id: str, date: str, time_slot: str):
+    """
+    指定された時間スロットのOpenSMILE特徴量JSONを返す GET API
+    例: /api/users/user123/logs/2025-06-25/opensmile/20-30
+    """
+    file_path = os.path.join(BASE_DIR, user_id, date, "opensmile", f"{time_slot}.json")
+
+    if not os.path.exists(file_path):
+        raise HTTPException(status_code=404, detail=f"OpenSMILE features file not found for slot {time_slot}")
+
+    try:
+        with open(file_path, "r", encoding="utf-8") as f:
+            data = json.load(f)
+        return JSONResponse(content=data)
+
+    except json.JSONDecodeError:
+        raise HTTPException(status_code=400, detail=f"Invalid JSON format in {time_slot}.json")
+
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Unexpected error: {str(e)}")
+
+# =========================================
+# 🔎 OpenSMILE特徴量 統合JSONファイル取得
+#     (/api/users/{user_id}/logs/{date}/opensmile-summary)
+# =========================================
+@app.get("/api/users/{user_id}/logs/{date}/opensmile-summary")
+async def get_opensmile_summary(user_id: str, date: str):
+    """
+    統合OpenSMILE特徴量JSONを返す GET API
+    例: /api/users/user123/logs/2025-06-25/opensmile-summary
+    """
+    file_path = os.path.join(BASE_DIR, user_id, date, "opensmile", "vault_features_timeline.json")
+
+    if not os.path.exists(file_path):
+        raise HTTPException(status_code=404, detail="OpenSMILE summary file not found")
+
+    try:
+        with open(file_path, "r", encoding="utf-8") as f:
+            data = json.load(f)
+        return JSONResponse(content=data)
+
+    except json.JSONDecodeError:
+        raise HTTPException(status_code=400, detail="Invalid JSON format in vault_features_timeline.json")
+
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Unexpected error: {str(e)}")
+
+# =========================================
+# 🔎 利用可能なOpenSMILE特徴量スロット一覧取得
+#     (/api/users/{user_id}/logs/{date}/opensmile)
+# =========================================
+@app.get("/api/users/{user_id}/logs/{date}/opensmile")
+async def list_opensmile_features(user_id: str, date: str):
+    """
+    指定された日付で利用可能なOpenSMILE特徴量ファイル一覧を返す GET API
+    例: /api/users/user123/logs/2025-06-25/opensmile
+    """
+    features_dir = os.path.join(BASE_DIR, user_id, date, "opensmile")
+
+    if not os.path.exists(features_dir):
+        return JSONResponse(content={"available_slots": [], "count": 0, "has_summary": False})
+
+    try:
+        all_files = [f for f in os.listdir(features_dir) if f.endswith('.json')]
+        
+        # 個別ファイル（時間スロット）を抽出
+        time_slot_files = [f for f in all_files if f != "vault_features_timeline.json"]
+        time_slots = [f.replace('.json', '') for f in time_slot_files]
+        time_slots.sort()  # 時間順にソート
+        
+        # 統合ファイルの存在確認
+        has_summary = "vault_features_timeline.json" in all_files
+
+        return JSONResponse(content={
+            "available_slots": time_slots,
+            "count": len(time_slots),
+            "has_summary": has_summary,
+            "directory": features_dir
+        })
+
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Error listing OpenSMILE features: {str(e)}")
