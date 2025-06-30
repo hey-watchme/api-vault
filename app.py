@@ -567,16 +567,16 @@ async def get_opensmile_features(user_id: str, date: str, time_slot: str):
         raise HTTPException(status_code=500, detail=f"Unexpected error: {str(e)}")
 
 # =========================================
-# 🔎 OpenSMILE特徴量 統合JSONファイル取得
+# 🔎 OpenSMILE特徴量 サマリーJSONファイル取得
 #     (/api/users/{user_id}/logs/{date}/opensmile-summary)
 # =========================================
 @app.get("/api/users/{user_id}/logs/{date}/opensmile-summary")
 async def get_opensmile_summary(user_id: str, date: str):
     """
-    統合OpenSMILE特徴量JSONを返す GET API
+    OpenSMILEサマリーのresult.jsonを返す GET API
     例: /api/users/user123/logs/2025-06-25/opensmile-summary
     """
-    file_path = os.path.join(BASE_DIR, user_id, date, "opensmile", "vault_features_timeline.json")
+    file_path = os.path.join(BASE_DIR, user_id, date, "opensmile-summary", "result.json")
 
     if not os.path.exists(file_path):
         raise HTTPException(status_code=404, detail="OpenSMILE summary file not found")
@@ -587,7 +587,7 @@ async def get_opensmile_summary(user_id: str, date: str):
         return JSONResponse(content=data)
 
     except json.JSONDecodeError:
-        raise HTTPException(status_code=400, detail="Invalid JSON format in vault_features_timeline.json")
+        raise HTTPException(status_code=400, detail="Invalid JSON format in result.json")
 
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Unexpected error: {str(e)}")
@@ -603,6 +603,7 @@ async def list_opensmile_features(user_id: str, date: str):
     例: /api/users/user123/logs/2025-06-25/opensmile
     """
     features_dir = os.path.join(BASE_DIR, user_id, date, "opensmile")
+    summary_dir = os.path.join(BASE_DIR, user_id, date, "opensmile-summary")
 
     if not os.path.exists(features_dir):
         return JSONResponse(content={"available_slots": [], "count": 0, "has_summary": False})
@@ -611,12 +612,11 @@ async def list_opensmile_features(user_id: str, date: str):
         all_files = [f for f in os.listdir(features_dir) if f.endswith('.json')]
         
         # 個別ファイル（時間スロット）を抽出
-        time_slot_files = [f for f in all_files if f != "vault_features_timeline.json"]
-        time_slots = [f.replace('.json', '') for f in time_slot_files]
+        time_slots = [f.replace('.json', '') for f in all_files]
         time_slots.sort()  # 時間順にソート
         
-        # 統合ファイルの存在確認
-        has_summary = "vault_features_timeline.json" in all_files
+        # サマリーファイルの存在確認（opensmile-summary/result.json）
+        has_summary = os.path.exists(os.path.join(summary_dir, "result.json"))
 
         return JSONResponse(content={
             "available_slots": time_slots,

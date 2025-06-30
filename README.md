@@ -152,6 +152,8 @@ for slot in time_slots:
 - `POST /upload/analysis/emotion-timeline` - 心理グラフ(VibeGraph)JSONアップロード
 - `POST /upload/analysis/sed-timeline` - 行動グラフ(BehaviorGraph)(SEDタイムライン)JSONアップロード
 - `POST /upload/analysis/sed-summary` - 行動グラフ(BehaviorGraph)(SEDサマリー)JSONアップロード
+- `POST /upload/analysis/opensmile-features` - OpenSMILE個別特徴量JSONアップロード (時間スロット別)
+- `POST /upload/analysis/opensmile-summary` - OpenSMILEサマリーJSONアップロード
 
 ### **表示・確認系**
 - `GET /view-file` - JSONファイル内容表示(例: https://api.hey-watch.me/view-file?file_path=user123/2025-06-30/opensmile/10-00.json)
@@ -159,6 +161,10 @@ for slot in time_slots:
 
 ### **API系 (Webダッシュボード用)**
 - `GET /api/users/{user_id}/logs/{date}/sed-summary` - SEDサマリー取得
+- `GET /api/users/{user_id}/logs/{date}/emotion-timeline` - 感情タイムライン取得
+- `GET /api/users/{user_id}/logs/{date}/opensmile-summary` - OpenSMILEサマリー取得
+- `GET /api/users/{user_id}/logs/{date}/opensmile/{time_slot}` - OpenSMILE個別特徴量取得
+- `GET /api/users/{user_id}/logs/{date}/opensmile` - OpenSMILE利用可能スロット一覧取得
 
 ## 🔗 EC2データアクセスガイド
 
@@ -502,7 +508,9 @@ export default EmotionDashboard;
 │       ├── prompt/           # プロンプトJSON
 │       ├── emotion-timeline/ # 感情タイムライン
 │       ├── sed/              # SEDタイムライン
-│       └── sed-summary/      # SEDサマリー
+│       ├── sed-summary/      # SEDサマリー
+│       ├── opensmile/        # OpenSMILE個別特徴量（時間スロット別）
+│       └── opensmile-summary/ # OpenSMILEサマリー
 ```
 
 ### ⏰ WAVファイルの命名規則（重要）
@@ -548,7 +556,9 @@ vault/data/data_accounts/
 │       ├── prompt/           # プロンプトJSON
 │       ├── emotion-timeline/ # 感情タイムライン
 │       ├── sed/              # SEDタイムライン
-│       └── sed-summary/      # SEDサマリー
+│       ├── sed-summary/      # SEDサマリー
+│       ├── opensmile/        # OpenSMILE個別特徴量（時間スロット別）
+│       └── opensmile-summary/ # OpenSMILEサマリー
 ```
 
 ## 機能と特徴
