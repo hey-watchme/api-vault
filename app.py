@@ -21,7 +21,7 @@
 #     - 各種JSONやWAVの表示／取得：`/view-file`, `/download-file`
 #
 # 🔹 Web版ダッシュボード用途（React + Vite + Tailwind）：
-#     - 感情グラフの取得：`/api/users/{user_id}/logs/{date}/emotion-timeline` ← NEW!
+#     - 心理グラフの取得：`/api/users/{user_id}/logs/{date}/emotion-timeline` ← NEW!
 #     - 行動グラフ（SEDサマリー）の取得：`/api/users/{user_id}/logs/{date}/sed-summary`
 #     - これらのJSONは iOS / Streamlit 側から事前にアップロードされた分析結果
 #
@@ -460,13 +460,13 @@ async def upload_opensmile_summary(
     return JSONResponse({"status": "ok", "path": save_path})
 
 # =========================================
-# 🔎 Dashboard Web用 感情タイムライン JSON 取得
+# 🔎 Dashboard Web用 心理グラフ JSON 取得
 #     (/api/users/{user_id}/logs/{date}/emotion-timeline)
 # =========================================
 @app.get("/api/users/{user_id}/logs/{date}/emotion-timeline")
 async def get_emotion_timeline(user_id: str, date: str):
     """
-    感情タイムラインの emotion-timeline.json を返す GET API
+    心理グラフの emotion-timeline.json を返す GET API
     例: /api/users/user123/logs/2025-06-25/emotion-timeline
     """
     file_path = os.path.join(BASE_DIR, user_id, date, "emotion-timeline", "emotion-timeline.json")
@@ -567,13 +567,13 @@ async def get_opensmile_features(user_id: str, date: str, time_slot: str):
         raise HTTPException(status_code=500, detail=f"Unexpected error: {str(e)}")
 
 # =========================================
-# 🔎 OpenSMILE特徴量 サマリーJSONファイル取得
+# 🔎 Dashboard Web用 感情グラフ JSON 取得
 #     (/api/users/{user_id}/logs/{date}/opensmile-summary)
 # =========================================
 @app.get("/api/users/{user_id}/logs/{date}/opensmile-summary")
 async def get_opensmile_summary(user_id: str, date: str):
     """
-    OpenSMILEサマリーのresult.jsonを返す GET API
+    感情グラフの opensmile-summary/result.json を返す GET API
     例: /api/users/user123/logs/2025-06-25/opensmile-summary
     """
     file_path = os.path.join(BASE_DIR, user_id, date, "opensmile-summary", "result.json")

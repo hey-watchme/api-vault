@@ -45,7 +45,7 @@ vault/
 │               ├── raw/              # WAV音声ファイル
 │               ├── transcriptions/   # 文字起こしJSON
 │               ├── prompt/           # ChatGPTプロンプトJSON
-│               ├── emotion-timeline/ # 感情タイムライン
+│               ├── emotion-timeline/ # 心理グラフ
 │               ├── sed/              # SEDタイムライン
 │               └── sed-summary/      # SEDサマリー
 ├── .gitignore
