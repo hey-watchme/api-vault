@@ -539,32 +539,6 @@ async def upload_opensmile_features(
 
     return JSONResponse({"status": "ok", "path": save_path})
 
-# =========================================
-# 🎵 OpenSMILE特徴量 統合JSONファイル アップロード 
-#     (/upload/analysis/opensmile-summary)
-# =========================================
-@app.post("/upload/analysis/opensmile-summary")
-async def upload_opensmile_summary(
-    file: UploadFile = File(...),
-    user_id: str = Form(...),
-    date: str = Form(...)
-):
-    """
-    OpenSMILE API から生成された統合特徴量JSONファイルをアップロード
-    保存先: /home/ubuntu/data/data_accounts/{user_id}/{date}/opensmile/vault_features_timeline.json
-    """
-    if not file.filename.endswith(".json"):
-        raise HTTPException(status_code=400, detail="Only .json files allowed")
-
-    save_dir = os.path.join(BASE_DIR, user_id, date, "opensmile")
-    os.makedirs(save_dir, exist_ok=True)
-
-    save_path = os.path.join(save_dir, "vault_features_timeline.json")
-    
-    with open(save_path, "wb") as buf:
-        shutil.copyfileobj(file.file, buf)
-
-    return JSONResponse({"status": "ok", "path": save_path})
 
 # =========================================
 # 🔎 OpenSMILE特徴量 個別JSONファイル取得

@@ -67,7 +67,6 @@ cd vault/watchme_api
 git pull origin main
 
 # 2. app.py を編集
-# （お好みのエディタでapp.pyを編集）
 
 # 3. 変更をコミット・プッシュ
 git add .
@@ -147,16 +146,16 @@ for slot in time_slots:
 ```
 
 ### **アップロード系**
-- `POST /upload` - WAV音声ファイルアップロード (iOSアプリから)
-- `POST /upload-transcription` - 文字起こしJSONアップロード (Whisper APIから)
-- `POST /upload-prompt` - ChatGPTプロンプトJSONアップロード
-- `POST /upload/analysis/emotion-timeline` - 感情タイムラインJSONアップロード
-- `POST /upload/analysis/sed-timeline` - SEDタイムラインJSONアップロード
-- `POST /upload/analysis/sed-summary` - SEDサマリーJSONアップロード
+- `POST /upload` - WAV音声ファイルアップロード (iOSアプリから)(RAWフォルダ)
+- `POST /upload-transcription` - 心理グラフ(VibeGraph)用 Whisper文字起こしJSONアップロード (Whisper APIから)
+- `POST /upload-prompt` - 心理グラフ(VibeGraph)用ChatGPTプロンプトJSONアップロード
+- `POST /upload/analysis/emotion-timeline` - 心理グラフ(VibeGraph)JSONアップロード
+- `POST /upload/analysis/sed-timeline` - 行動グラフ(BehaviorGraph)(SEDタイムライン)JSONアップロード
+- `POST /upload/analysis/sed-summary` - 行動グラフ(BehaviorGraph)(SEDサマリー)JSONアップロード
 
 ### **表示・確認系**
-- `GET /view-file` - JSONファイル内容表示
-- `GET /status` - HTML形式のファイル一覧表示
+- `GET /view-file` - JSONファイル内容表示(例: https://api.hey-watch.me/view-file?file_path=user123/2025-06-30/opensmile/10-00.json)
+- `GET /status` - HTML形式のファイル一覧表示(https://api.hey-watch.me/status)
 
 ### **API系 (Webダッシュボード用)**
 - `GET /api/users/{user_id}/logs/{date}/sed-summary` - SEDサマリー取得
@@ -217,10 +216,10 @@ response = requests.post(
     json=transcription_data
 )
 
-# 3. ChatGPT APIで感情分析
+# 3. ChatGPT APIで心理グラフ用にスコアリング
 emotion_data = {"emotions": [{"time": 0, "emotion": "happiness", "score": 0.8}]}
 
-# 4. 感情タイムラインを送信
+# 4. 心理グラフデータを送信
 response = requests.post(
     "https://api.hey-watch.me/upload/analysis/emotion-timeline",
     params={"user_id": "test_user", "date": "2025-06-26"},
@@ -335,7 +334,7 @@ def upload_audio(wav_file_path, filename):
         )
     return response.json()
 
-# 2. 文字起こし結果をアップロード（Whisper APIから）
+# 2. Whisper文字起こし結果をアップロード（Whisper APIから）
 def upload_transcription(transcript_text):
     transcription_data = {
         "transcript": transcript_text,
@@ -349,7 +348,7 @@ def upload_transcription(transcript_text):
     )
     return response.json()
 
-# 3. 感情分析結果をアップロード（ChatGPT APIから）
+# 3. 心理グラフ用分析結果をアップロード（ChatGPT APIから）
 def upload_emotion_timeline(emotions):
     emotion_data = {
         "emotions": emotions,
@@ -362,21 +361,21 @@ def upload_emotion_timeline(emotions):
     )
     return response.json()
 
-# 4. データを取得して表示（Webダッシュボードから）
+# 4. 心理グラフ用データを取得して表示（Webダッシュボードから）
 def fetch_all_data():
-    # 感情データの取得
+    # 心理グラフデータの取得
     emotion_response = requests.get(
         f"{BASE_URL}/view-file",
         params={"file_path": f"{USER_ID}/{DATE}/emotion-timeline/emotion-timeline.json"}
     )
     
-    # 文字起こしデータの取得（複数ファイル）
+    # Whisper-APIから出力された文字起こしデータの取得（複数ファイル）
     transcription_08_30 = requests.get(
         f"{BASE_URL}/view-file",
         params={"file_path": f"{USER_ID}/{DATE}/transcriptions/08-30.json"}
     )
     
-    # SEDサマリーの取得
+    # 行動グラフ(SEDサマリー)データの取得
     sed_summary_response = requests.get(
         f"{BASE_URL}/view-file",
         params={"file_path": f"{USER_ID}/{DATE}/sed-summary/result.json"}
