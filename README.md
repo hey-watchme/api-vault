@@ -4,6 +4,34 @@ WatchMe プロジェクト用のファイル受け渡しAPIです。
 
 音声データ（WAV）と各種解析結果（JSON）をユーザー・日付単位で管理し、iOSアプリ・Streamlit・Webダッシュボード間のデータ授受を安全に行います。
 
+## 📊 WatchMe 3大グラフ機能【重要：関係者共通認識】
+
+**プロダクトの核となる3つのグラフ機能を正しく区別してください：**
+
+### 1. 💭 **心理グラフ** (Psychology Graph)
+- **システム名**: `emotion-timeline`
+- **API**: `GET /api/users/{user_id}/logs/{date}/emotion-timeline`
+- **データ元**: `emotion-timeline/emotion-timeline.json`
+- **機能**: ChatGPT解析による心理状態の時系列分析
+- **旧表記**: ~~感情タイムライン~~（混乱防止のため使用禁止）
+
+### 2. 🎭 **行動グラフ** (Behavior Graph)
+- **システム名**: `sed-summary`
+- **API**: `GET /api/users/{user_id}/logs/{date}/sed-summary`
+- **データ元**: `sed-summary/result.json`
+- **機能**: SED（音響イベント検出）による行動パターン分析
+
+### 3. ❤️ **感情グラフ** (Emotion Graph)
+- **システム名**: `opensmile-summary`
+- **API**: `GET /api/users/{user_id}/logs/{date}/opensmile-summary`
+- **データ元**: `opensmile-summary/result.json`
+- **機能**: OpenSMILE音声特徴量による感情状態分析
+
+> **⚠️ 重要注意:** 
+> - 「感情タイムライン」という用語は使用しないでください → **心理グラフ**と呼称
+> - emotion-timelineシステムは**心理グラフ**です
+> - opensmile-summaryシステムが**感情グラフ**です
+
 ## ⚠️ 重要な制限事項
 
 **このローカル環境は「コード編集専用」です。以下の点にご注意ください：**
