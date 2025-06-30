@@ -116,6 +116,21 @@ async def download_file(user_id: str, date: str, slot: str):
     return FileResponse(file_path, media_type="audio/wav", filename=f"{slot}.wav")
 
 # =========================================
+# 3b) SED JSON ダウンロード (/download-sed) - NEW!
+# =========================================
+@app.get("/download-sed")
+async def download_sed_file(user_id: str, date: str, slot: str):
+    """
+    SEDファイル専用ダウンロードエンドポイント
+    パス: {user_id}/{date}/sed/{slot}.json
+    """
+    file_path = f"{BASE_DIR}/{user_id}/{date}/sed/{slot}.json"
+    if not os.path.exists(file_path):
+        raise HTTPException(status_code=404, detail=f"SED file not found: {user_id}/{date}/sed/{slot}.json")
+
+    return FileResponse(file_path, media_type="application/json", filename=f"{slot}.json")
+
+# =========================================
 # 4a) プロンプト JSON アップロード (/upload-prompt)
 # =========================================
 @app.post("/upload-prompt")
