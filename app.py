@@ -131,6 +131,21 @@ async def download_sed_file(user_id: str, date: str, slot: str):
     return FileResponse(file_path, media_type="application/json", filename=f"{slot}.json")
 
 # =========================================
+# 3c) OpenSMILE JSON ダウンロード (/download-opensmile) - NEW!
+# =========================================
+@app.get("/download-opensmile")
+async def download_opensmile_file(user_id: str, date: str, slot: str):
+    """
+    OpenSMILEファイル専用ダウンロードエンドポイント
+    パス: {user_id}/{date}/opensmile/{slot}.json
+    """
+    file_path = f"{BASE_DIR}/{user_id}/{date}/opensmile/{slot}.json"
+    if not os.path.exists(file_path):
+        raise HTTPException(status_code=404, detail=f"OpenSMILE file not found: {user_id}/{date}/opensmile/{slot}.json")
+
+    return FileResponse(file_path, media_type="application/json", filename=f"{slot}.json")
+
+# =========================================
 # 4a) プロンプト JSON アップロード (/upload-prompt)
 # =========================================
 @app.post("/upload-prompt")
@@ -412,6 +427,29 @@ async def upload_sed_summary(
         raise HTTPException(status_code=400, detail="Only .json files allowed")
 
     save_dir = os.path.join(BASE_DIR, user_id, date, "sed-summary")
+    os.makedirs(save_dir, exist_ok=True)
+
+    save_path = os.path.join(save_dir, "result.json")
+    
+    with open(save_path, "wb") as buf:
+        shutil.copyfileobj(file.file, buf)
+
+    return JSONResponse({"status": "ok", "path": save_path})
+
+# =========================================
+# 4f) OpenSMILE Summary JSON アップロード - NEW!
+#     (/upload/analysis/opensmile-summary)
+# =========================================
+@app.post("/upload/analysis/opensmile-summary")
+async def upload_opensmile_summary(
+    file: UploadFile = File(...),
+    user_id: str = Form(...),
+    date: str = Form(...)
+):
+    if not file.filename.endswith(".json"):
+        raise HTTPException(status_code=400, detail="Only .json files allowed")
+
+    save_dir = os.path.join(BASE_DIR, user_id, date, "opensmile-summary")
     os.makedirs(save_dir, exist_ok=True)
 
     save_path = os.path.join(save_dir, "result.json")
