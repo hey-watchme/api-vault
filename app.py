@@ -367,13 +367,13 @@ async def status_all():
     
     base = Path(BASE_DIR)
     
-    # ── USER 層 ──
-    for user_dir in sorted(p for p in base.iterdir() if p.is_dir()):
-        html_lines.append(f'👤 <span style="font-weight: bold; color: #007bff;">{user_dir.name}/</span>')
+    # ── DEVICE 層 ──
+    for device_dir in sorted(p for p in base.iterdir() if p.is_dir()):
+        html_lines.append(f'📱 <span style="font-weight: bold; color: #007bff;">{device_dir.name}/</span>')
         
         # ── DATE 層 (降順) ──
-        for date_name in _sort_dates([d.name for d in user_dir.iterdir() if d.is_dir()]):
-            date_path = user_dir / date_name
+        for date_name in _sort_dates([d.name for d in device_dir.iterdir() if d.is_dir()]):
+            date_path = device_dir / date_name
             html_lines.append(f'  📅 <span style="font-weight: bold; color: #28a745;">{date_name}/</span>')
             _walk_dir_with_links(date_path, base, 2, html_lines)
             html_lines.append("")
