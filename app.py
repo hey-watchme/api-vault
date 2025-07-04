@@ -21,8 +21,8 @@
 #     - 各種JSONやWAVの表示／取得：`/view-file`, `/download-file`
 #
 # 🔹 Web版ダッシュボード用途（React + Vite + Tailwind）：
-#     - 心理グラフの取得：`/api/users/{user_id}/logs/{date}/emotion-timeline` ← NEW!
-#     - 行動グラフ（SEDサマリー）の取得：`/api/users/{user_id}/logs/{date}/sed-summary`
+#     - 心理グラフの取得：`/api/devices/{device_id}/logs/{date}/emotion-timeline` ← NEW!
+#     - 行動グラフ（SEDサマリー）の取得：`/api/devices/{device_id}/logs/{date}/sed-summary`
 #     - これらのJSONは iOS / Streamlit 側から事前にアップロードされた分析結果
 #
 # 🔧 データ構造：
@@ -517,7 +517,7 @@ async def upload_opensmile_summary(
 
 # =========================================
 # 🔎 Dashboard Web用 心理グラフ JSON 取得
-#     (/api/users/{user_id}/logs/{date}/emotion-timeline)
+#     (/api/devices/{device_id}/logs/{date}/emotion-timeline)
 # =========================================
 @app.get("/api/devices/{device_id}/logs/{date}/emotion-timeline")
 async def get_emotion_timeline(device_id: str, date: str):
@@ -567,7 +567,7 @@ async def get_emotion_timeline_legacy(user_id: str, date: str):
 
 # =========================================
 # 🔎 Dashboard Web用 行動グラフ表示用 SEDサマリー JSON 取得
-#     (/api/users/{user_id}/logs/{date}/sed-summary)
+#     (/api/devices/{device_id}/logs/{date}/sed-summary)
 # =========================================
 @app.get("/api/devices/{device_id}/logs/{date}/sed-summary")
 async def get_sed_summary(device_id: str, date: str):
@@ -647,7 +647,7 @@ async def upload_opensmile_features(
 
 # =========================================
 # 🔎 OpenSMILE特徴量 個別JSONファイル取得
-#     (/api/users/{user_id}/logs/{date}/opensmile/{time_slot})
+#     (/api/devices/{device_id}/logs/{date}/opensmile/{time_slot})
 # =========================================
 @app.get("/api/devices/{device_id}/logs/{date}/opensmile/{time_slot}")
 async def get_opensmile_features(device_id: str, date: str, time_slot: str):
@@ -696,7 +696,7 @@ async def get_opensmile_features_legacy(user_id: str, date: str, time_slot: str)
 
 # =========================================
 # 🔎 Dashboard Web用 感情グラフ JSON 取得
-#     (/api/users/{user_id}/logs/{date}/opensmile-summary)
+#     (/api/devices/{device_id}/logs/{date}/opensmile-summary)
 # =========================================
 @app.get("/api/devices/{device_id}/logs/{date}/opensmile-summary")
 async def get_opensmile_summary(device_id: str, date: str):
@@ -745,7 +745,7 @@ async def get_opensmile_summary_legacy(user_id: str, date: str):
 
 # =========================================
 # 🔎 利用可能なOpenSMILE特徴量スロット一覧取得
-#     (/api/users/{user_id}/logs/{date}/opensmile)
+#     (/api/devices/{device_id}/logs/{date}/opensmile)
 # =========================================
 @app.get("/api/devices/{device_id}/logs/{date}/opensmile")
 async def list_opensmile_features(device_id: str, date: str):
