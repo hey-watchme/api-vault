@@ -304,10 +304,11 @@ def _walk_dir_with_links(path: Path, base_path: Path, indent_lvl: int, lines: Li
 
 @app.get("/status", response_class=HTMLResponse)
 async def status_all():
-    if not os.path.exists(BASE_DIR):
-        return "<h2>データフォルダが存在しません</h2>"
+    try:
+        if not os.path.exists(BASE_DIR):
+            return f"<h2>データフォルダが存在しません: {BASE_DIR}</h2>"
 
-    html_lines = [
+        html_lines = [
         """
         <!DOCTYPE html>
         <html>
@@ -378,16 +379,41 @@ async def status_all():
             _walk_dir_with_links(date_path, base, 2, html_lines)
             html_lines.append("")
     
-    html_lines.extend([
-        """
-                </pre>
+        html_lines.extend([
+            """
+                    </pre>
+                </div>
+            </body>
+            </html>
+            """
+        ])
+        
+        return "\n".join(html_lines)
+        
+    except Exception as e:
+        error_html = f"""
+        <!DOCTYPE html>
+        <html>
+        <head>
+            <title>WatchMe Vault - エラー</title>
+            <style>
+                body {{ font-family: monospace; margin: 20px; background: #f5f5f5; }}
+                .error {{ background: #fff; padding: 20px; border-radius: 8px; border-left: 5px solid #dc3545; }}
+            </style>
+        </head>
+        <body>
+            <div class="error">
+                <h2>🚨 /status エンドポイントエラー</h2>
+                <p><strong>エラー詳細:</strong> {str(e)}</p>
+                <p><strong>BASE_DIR:</strong> {BASE_DIR}</p>
+                <p><strong>BASE_DIR存在:</strong> {os.path.exists(BASE_DIR)}</p>
+                <hr>
+                <p><a href="/status">再試行</a></p>
             </div>
         </body>
         </html>
         """
-    ])
-    
-    return "\n".join(html_lines)
+        return error_html
 
 # =========================================
 # 5) 心理グラフ作成用 ChatGPT 分析 JSON アップロード
