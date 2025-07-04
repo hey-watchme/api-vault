@@ -26,8 +26,8 @@
 #     - これらのJSONは iOS / Streamlit 側から事前にアップロードされた分析結果
 #
 # 🔧 データ構造：
-#     BASE_DIR/user_id/YYYY-MM-DD/{raw, transcriptions, sed, prompt, emotion-timeline, sed-summary}/
-#     例: /home/ubuntu/data/data_accounts/user123/2025-06-21/sed-summary/result.json
+#     BASE_DIR/device_id/YYYY-MM-DD/{raw, transcriptions, sed, prompt, emotion-timeline, sed-summary}/
+#     例: /home/ubuntu/data/data_accounts/device123/2025-06-21/sed-summary/result.json
 #
 # =========================================
 
@@ -67,8 +67,9 @@ app.mount("/status", StaticFiles(directory=BASE_DIR), name="status")
 @app.post("/upload")
 async def upload_file(
     file: UploadFile = File(...),
-    user_id: str = Form("user123"),
-    timestamp: str = Form(None)  # 予約：iOS の送信タイムスタンプ
+    user_id: str = Form("user123"),  # 下位互換性のために保持
+    device_id: str = Form(...),     # デバイスIDを必須パラメータに変更
+    timestamp: str = Form(None)     # 予約：iOS の送信タイムスタンプ
 ):
     jst = pytz.timezone("Asia/Tokyo")
     now = datetime.now(jst)
@@ -76,14 +77,15 @@ async def upload_file(
     slot_min = "00" if now.minute < 30 else "30"
     slot_str = f"{now.hour:02d}-{slot_min}"
 
-    save_dir = os.path.join(BASE_DIR, user_id, date_str, "raw")
+    # device_idベースでディレクトリ構造を作成
+    save_dir = os.path.join(BASE_DIR, device_id, date_str, "raw")
     os.makedirs(save_dir, exist_ok=True)
     save_path = os.path.join(save_dir, f"{slot_str}.wav")
 
     with open(save_path, "wb") as f:
         f.write(await file.read())
 
-    return JSONResponse({"status": "ok", "path": save_path})
+    return JSONResponse({"status": "ok", "path": save_path, "device_id": device_id})
 
 # =========================================
 # 2) 文字起こし JSON アップロード (/upload-transcription)
@@ -91,25 +93,33 @@ async def upload_file(
 @app.post("/upload-transcription")
 async def upload_transcription(
     file: UploadFile = File(...),
-    user_id: str = Form(...),
+    user_id: str = Form(None),       # 下位互換性のために保持（オプション）
+    device_id: str = Form(...),     # デバイスIDを必須パラメータに変更
     date: str = Form(...),           # "2025-06-15"
     time_block: str = Form(...),     # "00-00"
 ):
-    save_dir = os.path.join(BASE_DIR, user_id, date, "transcriptions")
+    # device_idベースでディレクトリ構造を作成
+    save_dir = os.path.join(BASE_DIR, device_id, date, "transcriptions")
     os.makedirs(save_dir, exist_ok=True)
     save_path = os.path.join(save_dir, f"{time_block}.json")
 
     with open(save_path, "wb") as buf:
         buf.write(await file.read())
 
-    return JSONResponse({"status": "success", "path": save_path})
+    return JSONResponse({"status": "success", "path": save_path, "device_id": device_id})
 
 # =========================================
 # 3) 個別 WAV ダウンロード (/download)
 # =========================================
 @app.get("/download")
-async def download_file(user_id: str, date: str, slot: str):
-    file_path = f"{BASE_DIR}/{user_id}/{date}/raw/{slot}.wav"
+async def download_file(
+    user_id: str = Query(None),      # 下位互換性のために保持（オプション）
+    device_id: str = Query(...),    # デバイスIDを必須パラメータに変更
+    date: str = Query(...), 
+    slot: str = Query(...)
+):
+    # device_idベースでファイルパスを構築
+    file_path = f"{BASE_DIR}/{device_id}/{date}/raw/{slot}.wav"
     if not os.path.exists(file_path):
         raise HTTPException(status_code=404, detail="File not found")
 
@@ -119,14 +129,19 @@ async def download_file(user_id: str, date: str, slot: str):
 # 3b) SED JSON ダウンロード (/download-sed) - NEW!
 # =========================================
 @app.get("/download-sed")
-async def download_sed_file(user_id: str, date: str, slot: str):
+async def download_sed_file(
+    user_id: str = Query(None),      # 下位互換性のために保持（オプション）
+    device_id: str = Query(...),    # デバイスIDを必須パラメータに変更
+    date: str = Query(...), 
+    slot: str = Query(...)
+):
     """
     SEDファイル専用ダウンロードエンドポイント
-    パス: {user_id}/{date}/sed/{slot}.json
+    パス: {device_id}/{date}/sed/{slot}.json
     """
-    file_path = f"{BASE_DIR}/{user_id}/{date}/sed/{slot}.json"
+    file_path = f"{BASE_DIR}/{device_id}/{date}/sed/{slot}.json"
     if not os.path.exists(file_path):
-        raise HTTPException(status_code=404, detail=f"SED file not found: {user_id}/{date}/sed/{slot}.json")
+        raise HTTPException(status_code=404, detail=f"SED file not found: {device_id}/{date}/sed/{slot}.json")
 
     return FileResponse(file_path, media_type="application/json", filename=f"{slot}.json")
 
@@ -134,14 +149,19 @@ async def download_sed_file(user_id: str, date: str, slot: str):
 # 3c) OpenSMILE JSON ダウンロード (/download-opensmile) - NEW!
 # =========================================
 @app.get("/download-opensmile")
-async def download_opensmile_file(user_id: str, date: str, slot: str):
+async def download_opensmile_file(
+    user_id: str = Query(None),      # 下位互換性のために保持（オプション）
+    device_id: str = Query(...),    # デバイスIDを必須パラメータに変更
+    date: str = Query(...), 
+    slot: str = Query(...)
+):
     """
     OpenSMILEファイル専用ダウンロードエンドポイント
-    パス: {user_id}/{date}/opensmile/{slot}.json
+    パス: {device_id}/{date}/opensmile/{slot}.json
     """
-    file_path = f"{BASE_DIR}/{user_id}/{date}/opensmile/{slot}.json"
+    file_path = f"{BASE_DIR}/{device_id}/{date}/opensmile/{slot}.json"
     if not os.path.exists(file_path):
-        raise HTTPException(status_code=404, detail=f"OpenSMILE file not found: {user_id}/{date}/opensmile/{slot}.json")
+        raise HTTPException(status_code=404, detail=f"OpenSMILE file not found: {device_id}/{date}/opensmile/{slot}.json")
 
     return FileResponse(file_path, media_type="application/json", filename=f"{slot}.json")
 
@@ -151,20 +171,22 @@ async def download_opensmile_file(user_id: str, date: str, slot: str):
 @app.post("/upload-prompt")
 async def upload_prompt(
     file: UploadFile = File(...),
-    user_id: str = Form(...),
+    user_id: str = Form(None),       # 下位互換性のために保持（オプション）
+    device_id: str = Form(...),     # デバイスIDを必須パラメータに変更
     date: str  = Form(...)
 ):
     if not file.filename.endswith(".json"):
         raise HTTPException(status_code=400, detail="Only .json allowed")
 
-    save_dir = os.path.join(BASE_DIR, user_id, date, "prompt")
+    # device_idベースでディレクトリ構造を作成
+    save_dir = os.path.join(BASE_DIR, device_id, date, "prompt")
     os.makedirs(save_dir, exist_ok=True)
     save_path = os.path.join(save_dir, "emotion-timeline_gpt_prompt.json")
 
     with open(save_path, "wb") as buf:
         shutil.copyfileobj(file.file, buf)
 
-    return JSONResponse({"status": "ok", "path": save_path})
+    return JSONResponse({"status": "ok", "path": save_path, "device_id": device_id})
 
 # =========================================
 # 新しいファイル関連エンドポイント
@@ -374,20 +396,22 @@ async def status_all():
 @app.post("/upload/analysis/emotion-timeline")
 async def upload_emotion_timeline(
     file: UploadFile = File(...),
-    user_id: str = Form(...),
+    user_id: str = Form(None),       # 下位互換性のために保持（オプション）
+    device_id: str = Form(...),     # デバイスIDを必須パラメータに変更
     date: str    = Form(...)
 ):
     if not file.filename.endswith(".json"):
         raise HTTPException(status_code=400, detail="Only .json allowed")
 
-    save_dir = os.path.join(BASE_DIR, user_id, date, "emotion-timeline")
+    # device_idベースでディレクトリ構造を作成
+    save_dir = os.path.join(BASE_DIR, device_id, date, "emotion-timeline")
     os.makedirs(save_dir, exist_ok=True)
     save_path = os.path.join(save_dir, "emotion-timeline.json")
 
     with open(save_path, "wb") as buf:
         shutil.copyfileobj(file.file, buf)
 
-    return JSONResponse({"status": "ok", "path": save_path})
+    return JSONResponse({"status": "ok", "path": save_path, "device_id": device_id})
 
 # =========================================
 # 🔊 行動グラフ作成用 SEDタイムライン JSON アップロード
@@ -396,14 +420,16 @@ async def upload_emotion_timeline(
 @app.post("/upload/analysis/sed-timeline")
 async def upload_sed_timeline(
     file: UploadFile = File(...),
-    user_id: str = Form(...),
+    user_id: str = Form(None),        # 下位互換性のために保持（オプション）
+    device_id: str = Form(...),      # デバイスIDを必須パラメータに変更
     date: str = Form(...),            # 例: "2025-06-18"
     time_block: str = Form(...),      # 例: "00-00"
 ):
     if not file.filename.endswith(".json"):
         raise HTTPException(status_code=400, detail="Only .json files allowed")
 
-    save_dir = os.path.join(BASE_DIR, user_id, date, "sed")
+    # device_idベースでディレクトリ構造を作成
+    save_dir = os.path.join(BASE_DIR, device_id, date, "sed")
     os.makedirs(save_dir, exist_ok=True)
 
     save_path = os.path.join(save_dir, f"{time_block}.json")
@@ -411,7 +437,7 @@ async def upload_sed_timeline(
     with open(save_path, "wb") as buf:
         shutil.copyfileobj(file.file, buf)
 
-    return JSONResponse({"status": "ok", "path": save_path})
+    return JSONResponse({"status": "ok", "path": save_path, "device_id": device_id})
 
 # =========================================
 # 🔊 行動グラフ保存用 SEDサマリー JSON アップロード
@@ -420,13 +446,15 @@ async def upload_sed_timeline(
 @app.post("/upload/analysis/sed-summary")
 async def upload_sed_summary(
     file: UploadFile = File(...),
-    user_id: str = Form(...),
+    user_id: str = Form(None),       # 下位互換性のために保持（オプション）
+    device_id: str = Form(...),     # デバイスIDを必須パラメータに変更
     date: str = Form(...)
 ):
     if not file.filename.endswith(".json"):
         raise HTTPException(status_code=400, detail="Only .json files allowed")
 
-    save_dir = os.path.join(BASE_DIR, user_id, date, "sed-summary")
+    # device_idベースでディレクトリ構造を作成
+    save_dir = os.path.join(BASE_DIR, device_id, date, "sed-summary")
     os.makedirs(save_dir, exist_ok=True)
 
     save_path = os.path.join(save_dir, "result.json")
@@ -434,7 +462,7 @@ async def upload_sed_summary(
     with open(save_path, "wb") as buf:
         shutil.copyfileobj(file.file, buf)
 
-    return JSONResponse({"status": "ok", "path": save_path})
+    return JSONResponse({"status": "ok", "path": save_path, "device_id": device_id})
 
 # =========================================
 # 4f) OpenSMILE Summary JSON アップロード - NEW!
@@ -443,13 +471,15 @@ async def upload_sed_summary(
 @app.post("/upload/analysis/opensmile-summary")
 async def upload_opensmile_summary(
     file: UploadFile = File(...),
-    user_id: str = Form(...),
+    user_id: str = Form(None),       # 下位互換性のために保持（オプション）
+    device_id: str = Form(...),     # デバイスIDを必須パラメータに変更
     date: str = Form(...)
 ):
     if not file.filename.endswith(".json"):
         raise HTTPException(status_code=400, detail="Only .json files allowed")
 
-    save_dir = os.path.join(BASE_DIR, user_id, date, "opensmile-summary")
+    # device_idベースでディレクトリ構造を作成
+    save_dir = os.path.join(BASE_DIR, device_id, date, "opensmile-summary")
     os.makedirs(save_dir, exist_ok=True)
 
     save_path = os.path.join(save_dir, "result.json")
@@ -457,18 +487,42 @@ async def upload_opensmile_summary(
     with open(save_path, "wb") as buf:
         shutil.copyfileobj(file.file, buf)
 
-    return JSONResponse({"status": "ok", "path": save_path})
+    return JSONResponse({"status": "ok", "path": save_path, "device_id": device_id})
 
 # =========================================
 # 🔎 Dashboard Web用 心理グラフ JSON 取得
 #     (/api/users/{user_id}/logs/{date}/emotion-timeline)
 # =========================================
-@app.get("/api/users/{user_id}/logs/{date}/emotion-timeline")
-async def get_emotion_timeline(user_id: str, date: str):
+@app.get("/api/devices/{device_id}/logs/{date}/emotion-timeline")
+async def get_emotion_timeline(device_id: str, date: str):
     """
     心理グラフの emotion-timeline.json を返す GET API
-    例: /api/users/user123/logs/2025-06-25/emotion-timeline
+    例: /api/devices/device123/logs/2025-06-25/emotion-timeline
     """
+    file_path = os.path.join(BASE_DIR, device_id, date, "emotion-timeline", "emotion-timeline.json")
+
+    if not os.path.exists(file_path):
+        raise HTTPException(status_code=404, detail="Emotion timeline file not found")
+
+    try:
+        with open(file_path, "r", encoding="utf-8") as f:
+            data = json.load(f)
+        return JSONResponse(content=data)
+
+    except json.JSONDecodeError:
+        raise HTTPException(status_code=400, detail="Invalid JSON format in emotion-timeline.json")
+
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Unexpected error: {str(e)}")
+
+# 下位互換性のための旧エンドポイント
+@app.get("/api/users/{user_id}/logs/{date}/emotion-timeline")
+async def get_emotion_timeline_legacy(user_id: str, date: str):
+    """
+    旧APIエンドポイント（下位互換性）
+    注意: 将来的に廃止予定。/api/devices/{device_id}/logs/{date}/emotion-timelineを使用してください
+    """
+    # 旧user_idベースのパスで検索
     file_path = os.path.join(BASE_DIR, user_id, date, "emotion-timeline", "emotion-timeline.json")
 
     if not os.path.exists(file_path):
@@ -489,11 +543,34 @@ async def get_emotion_timeline(user_id: str, date: str):
 # 🔎 Dashboard Web用 行動グラフ表示用 SEDサマリー JSON 取得
 #     (/api/users/{user_id}/logs/{date}/sed-summary)
 # =========================================
-@app.get("/api/users/{user_id}/logs/{date}/sed-summary")
-async def get_sed_summary(user_id: str, date: str):
+@app.get("/api/devices/{device_id}/logs/{date}/sed-summary")
+async def get_sed_summary(device_id: str, date: str):
     """
     SED summary の result.json を返す GET API
-    例: /api/users/user123/logs/2025-06-21/sed-summary
+    例: /api/devices/device123/logs/2025-06-21/sed-summary
+    """
+    file_path = os.path.join(BASE_DIR, device_id, date, "sed-summary", "result.json")
+
+    if not os.path.exists(file_path):
+        raise HTTPException(status_code=404, detail="SED summary file not found")
+
+    try:
+        with open(file_path, "r", encoding="utf-8") as f:
+            data = json.load(f)
+        return JSONResponse(content=data)
+
+    except json.JSONDecodeError:
+        raise HTTPException(status_code=400, detail="Invalid JSON format in result.json")
+
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Unexpected error: {str(e)}")
+
+# 下位互換性のための旧エンドポイント
+@app.get("/api/users/{user_id}/logs/{date}/sed-summary")
+async def get_sed_summary_legacy(user_id: str, date: str):
+    """
+    旧APIエンドポイント（下位互換性）
+    注意: 将来的に廃止予定。/api/devices/{device_id}/logs/{date}/sed-summaryを使用してください
     """
     file_path = os.path.join(BASE_DIR, user_id, date, "sed-summary", "result.json")
 
@@ -518,18 +595,20 @@ async def get_sed_summary(user_id: str, date: str):
 @app.post("/upload/analysis/opensmile-features")
 async def upload_opensmile_features(
     file: UploadFile = File(...),
-    user_id: str = Form(...),
+    user_id: str = Form(None),        # 下位互換性のために保持（オプション）
+    device_id: str = Form(...),      # デバイスIDを必須パラメータに変更
     date: str = Form(...),            # 例: "2025-06-25"
     time_slot: str = Form(...),       # 例: "20-30"
 ):
     """
     OpenSMILE API から生成された個別時間スロットの特徴量JSONファイルをアップロード
-    保存先: /home/ubuntu/data/data_accounts/{user_id}/{date}/opensmile/{time_slot}.json
+    保存先: /home/ubuntu/data/data_accounts/{device_id}/{date}/opensmile/{time_slot}.json
     """
     if not file.filename.endswith(".json"):
         raise HTTPException(status_code=400, detail="Only .json files allowed")
 
-    save_dir = os.path.join(BASE_DIR, user_id, date, "opensmile")
+    # device_idベースでディレクトリ構造を作成
+    save_dir = os.path.join(BASE_DIR, device_id, date, "opensmile")
     os.makedirs(save_dir, exist_ok=True)
 
     save_path = os.path.join(save_dir, f"{time_slot}.json")
@@ -537,18 +616,41 @@ async def upload_opensmile_features(
     with open(save_path, "wb") as buf:
         shutil.copyfileobj(file.file, buf)
 
-    return JSONResponse({"status": "ok", "path": save_path})
+    return JSONResponse({"status": "ok", "path": save_path, "device_id": device_id})
 
 
 # =========================================
 # 🔎 OpenSMILE特徴量 個別JSONファイル取得
 #     (/api/users/{user_id}/logs/{date}/opensmile/{time_slot})
 # =========================================
-@app.get("/api/users/{user_id}/logs/{date}/opensmile/{time_slot}")
-async def get_opensmile_features(user_id: str, date: str, time_slot: str):
+@app.get("/api/devices/{device_id}/logs/{date}/opensmile/{time_slot}")
+async def get_opensmile_features(device_id: str, date: str, time_slot: str):
     """
     指定された時間スロットのOpenSMILE特徴量JSONを返す GET API
-    例: /api/users/user123/logs/2025-06-25/opensmile/20-30
+    例: /api/devices/device123/logs/2025-06-25/opensmile/20-30
+    """
+    file_path = os.path.join(BASE_DIR, device_id, date, "opensmile", f"{time_slot}.json")
+
+    if not os.path.exists(file_path):
+        raise HTTPException(status_code=404, detail=f"OpenSMILE features file not found for slot {time_slot}")
+
+    try:
+        with open(file_path, "r", encoding="utf-8") as f:
+            data = json.load(f)
+        return JSONResponse(content=data)
+
+    except json.JSONDecodeError:
+        raise HTTPException(status_code=400, detail=f"Invalid JSON format in {time_slot}.json")
+
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Unexpected error: {str(e)}")
+
+# 下位互換性のための旧エンドポイント
+@app.get("/api/users/{user_id}/logs/{date}/opensmile/{time_slot}")
+async def get_opensmile_features_legacy(user_id: str, date: str, time_slot: str):
+    """
+    旧APIエンドポイント（下位互換性）
+    注意: 将来的に廃止予定。/api/devices/{device_id}/logs/{date}/opensmile/{time_slot}を使用してください
     """
     file_path = os.path.join(BASE_DIR, user_id, date, "opensmile", f"{time_slot}.json")
 
@@ -570,11 +672,34 @@ async def get_opensmile_features(user_id: str, date: str, time_slot: str):
 # 🔎 Dashboard Web用 感情グラフ JSON 取得
 #     (/api/users/{user_id}/logs/{date}/opensmile-summary)
 # =========================================
-@app.get("/api/users/{user_id}/logs/{date}/opensmile-summary")
-async def get_opensmile_summary(user_id: str, date: str):
+@app.get("/api/devices/{device_id}/logs/{date}/opensmile-summary")
+async def get_opensmile_summary(device_id: str, date: str):
     """
     感情グラフの opensmile-summary/result.json を返す GET API
-    例: /api/users/user123/logs/2025-06-25/opensmile-summary
+    例: /api/devices/device123/logs/2025-06-25/opensmile-summary
+    """
+    file_path = os.path.join(BASE_DIR, device_id, date, "opensmile-summary", "result.json")
+
+    if not os.path.exists(file_path):
+        raise HTTPException(status_code=404, detail="OpenSMILE summary file not found")
+
+    try:
+        with open(file_path, "r", encoding="utf-8") as f:
+            data = json.load(f)
+        return JSONResponse(content=data)
+
+    except json.JSONDecodeError:
+        raise HTTPException(status_code=400, detail="Invalid JSON format in result.json")
+
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Unexpected error: {str(e)}")
+
+# 下位互換性のための旧エンドポイント
+@app.get("/api/users/{user_id}/logs/{date}/opensmile-summary")
+async def get_opensmile_summary_legacy(user_id: str, date: str):
+    """
+    旧APIエンドポイント（下位互換性）
+    注意: 将来的に廃止予定。/api/devices/{device_id}/logs/{date}/opensmile-summaryを使用してください
     """
     file_path = os.path.join(BASE_DIR, user_id, date, "opensmile-summary", "result.json")
 
@@ -596,11 +721,44 @@ async def get_opensmile_summary(user_id: str, date: str):
 # 🔎 利用可能なOpenSMILE特徴量スロット一覧取得
 #     (/api/users/{user_id}/logs/{date}/opensmile)
 # =========================================
-@app.get("/api/users/{user_id}/logs/{date}/opensmile")
-async def list_opensmile_features(user_id: str, date: str):
+@app.get("/api/devices/{device_id}/logs/{date}/opensmile")
+async def list_opensmile_features(device_id: str, date: str):
     """
     指定された日付で利用可能なOpenSMILE特徴量ファイル一覧を返す GET API
-    例: /api/users/user123/logs/2025-06-25/opensmile
+    例: /api/devices/device123/logs/2025-06-25/opensmile
+    """
+    features_dir = os.path.join(BASE_DIR, device_id, date, "opensmile")
+    summary_dir = os.path.join(BASE_DIR, device_id, date, "opensmile-summary")
+
+    if not os.path.exists(features_dir):
+        return JSONResponse(content={"available_slots": [], "count": 0, "has_summary": False})
+
+    try:
+        all_files = [f for f in os.listdir(features_dir) if f.endswith('.json')]
+        
+        # 個別ファイル（時間スロット）を抽出
+        time_slots = [f.replace('.json', '') for f in all_files]
+        time_slots.sort()  # 時間順にソート
+        
+        # サマリーファイルの存在確認（opensmile-summary/result.json）
+        has_summary = os.path.exists(os.path.join(summary_dir, "result.json"))
+
+        return JSONResponse(content={
+            "available_slots": time_slots,
+            "count": len(time_slots),
+            "has_summary": has_summary,
+            "directory": features_dir
+        })
+
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Error listing OpenSMILE features: {str(e)}")
+
+# 下位互換性のための旧エンドポイント
+@app.get("/api/users/{user_id}/logs/{date}/opensmile")
+async def list_opensmile_features_legacy(user_id: str, date: str):
+    """
+    旧APIエンドポイント（下位互換性）
+    注意: 将来的に廃止予定。/api/devices/{device_id}/logs/{date}/opensmileを使用してください
     """
     features_dir = os.path.join(BASE_DIR, user_id, date, "opensmile")
     summary_dir = os.path.join(BASE_DIR, user_id, date, "opensmile-summary")
