@@ -68,7 +68,7 @@ app.mount("/status", StaticFiles(directory=BASE_DIR), name="status")
 async def upload_file(
     file: UploadFile = File(...),
     user_id: str = Form("user123"),  # 下位互換性のために保持
-    device_id: str = Form(None),     # デバイスIDをオプショナルに変更
+    device_id: str = Form(...),     # デバイスIDを必須パラメータに変更
     timestamp: str = Form(None)     # 予約：iOS の送信タイムスタンプ
 ):
     jst = pytz.timezone("Asia/Tokyo")
@@ -77,22 +77,15 @@ async def upload_file(
     slot_min = "00" if now.minute < 30 else "30"
     slot_str = f"{now.hour:02d}-{slot_min}"
 
-    # device_idが提供されていればdevice_idを使用、そうでなければuser_idを使用
-    directory_id = device_id if device_id else user_id
-    save_dir = os.path.join(BASE_DIR, directory_id, date_str, "raw")
+    # device_idベースでディレクトリ構造を作成
+    save_dir = os.path.join(BASE_DIR, device_id, date_str, "raw")
     os.makedirs(save_dir, exist_ok=True)
     save_path = os.path.join(save_dir, f"{slot_str}.wav")
 
     with open(save_path, "wb") as f:
         f.write(await file.read())
 
-    response_data = {"status": "ok", "path": save_path, "directory_id": directory_id}
-    if device_id:
-        response_data["device_id"] = device_id
-    else:
-        response_data["user_id"] = user_id
-    
-    return JSONResponse(response_data)
+    return JSONResponse({"status": "ok", "path": save_path, "device_id": device_id})
 
 # =========================================
 # 2) 文字起こし JSON アップロード (/upload-transcription)
