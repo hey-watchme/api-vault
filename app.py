@@ -58,8 +58,8 @@ else:
 
 app = FastAPI(title="WatchMe File Receiver")
 
-# StaticFiles で /status/** を公開（/status は後述 HTML が担当）
-app.mount("/status", StaticFiles(directory=BASE_DIR), name="status")
+# /status エンドポイントは下記のHTMLレスポンスが担当
+# StaticFiles マウントは不要（競合を避けるため削除）
 
 # =========================================
 # 1) WAV アップロード (/upload)
@@ -379,16 +379,16 @@ async def status_all():
             _walk_dir_with_links(date_path, base, 2, html_lines)
             html_lines.append("")
     
-        html_lines.extend([
-            """
-                    </pre>
-                </div>
-            </body>
-            </html>
-            """
-        ])
-        
-        return "\n".join(html_lines)
+    html_lines.extend([
+        """
+                </pre>
+            </div>
+        </body>
+        </html>
+        """
+    ])
+    
+    return "\n".join(html_lines)
         
     except Exception as e:
         error_html = f"""
