@@ -1,8 +1,8 @@
 # WatchMe Vault API
 
-WatchMe プロジェクト用のファイル受け渡しAPIです。
+**iOSデバイスからの録音データ収集・保存システム**
 
-音声データ（WAV）と各種解析結果（JSON）をユーザー・日付単位で管理し、iOSアプリ・Streamlit・Webダッシュボード間のデータ授受を安全に行います。
+WatchMeプロジェクトの中核となるファイル受け渡しAPIです。主にiOSデバイスからの録音データ（WAV）を受信・保存し、各種解析エンジンとWebダッシュボード間のデータ授受を安全に管理します。
 
 ## 📊 WatchMe 3大グラフ機能【重要：関係者共通認識】
 
@@ -72,19 +72,24 @@ vault/                   # 開発用コンテナ
 
 ## 本番環境での起動
 
-サーバー上（本番環境）でのみ実行してください：
+### 初回セットアップ（本番サーバー）
 
 ```bash
 # GitHubからクローン（初回のみ）
+# 注意: リポジトリ名はwatchme-vault-apiですが、作業ディレクトリ名はwatchme_apiとなります
 git clone git@github.com:matsumotokaya/watchme-vault-api.git watchme_api
 cd watchme_api
 
 # 依存関係のインストール
 pip install -r requirements.txt
 
-# アプリケーション起動
+# アプリケーション起動（手動テスト用）
 uvicorn app:app --reload --host 0.0.0.0 --port 8000
 ```
+
+### 本番運用（systemd自動起動）
+
+**重要**: 本番環境では`/home/ubuntu/watchme_api`ディレクトリでsystemdサービスとして動作します。
 
 ## ローカル開発環境での作業
 
@@ -154,7 +159,43 @@ curl "https://api.hey-watch.me/download-file?path=device123/2025-06-25/raw/20-30
 
 ### **外部API連携パターン (推奨使用方法)**
 
-#### A. OpenSMILE API からの音声取得
+#### A. iOSデバイス → Vault API（データ収集の起点）
+```python
+# iOSデバイスからのX-File-Pathヘッダー付きアップロード例
+import requests
+
+def upload_device_recording(device_id, date, time_slot, wav_file_path):
+    """
+    デバイスが録音開始時刻を基に保存パスを指定してアップロード
+    """
+    file_path = f"{device_id}/{date}/{time_slot}.wav"
+    
+    with open(wav_file_path, 'rb') as f:
+        files = {'file': (f'{time_slot}.wav', f, 'audio/wav')}
+        data = {'device_id': device_id}
+        headers = {'X-File-Path': file_path}
+        
+        response = requests.post(
+            "https://api.hey-watch.me/upload",
+            data=data,
+            files=files,
+            headers=headers
+        )
+    return response.json()
+
+# 使用例: バックデート・まとめ送信
+device_recordings = [
+    ("device123", "2025-07-06", "10-00", "recording_1000.wav"),
+    ("device123", "2025-07-06", "10-30", "recording_1030.wav"),
+    ("device123", "2025-07-07", "08-00", "recording_0800.wav"),
+]
+
+for device_id, date, slot, file_path in device_recordings:
+    result = upload_device_recording(device_id, date, slot, file_path)
+    print(f"アップロード完了: {result}")
+```
+
+#### B. OpenSMILE API からの音声取得（解析エンジン）
 ```python
 # OpenSMILE が Vault API から WAV ファイルを取得
 async def fetch_wav_from_vault(device_id, date, time_slot):
@@ -164,36 +205,54 @@ async def fetch_wav_from_vault(device_id, date, time_slot):
             if response.status == 200:
                 return await response.read()  # WAVバイナリデータ
     return None
-```
 
-#### B. Whisper API からの音声取得
-```python
-# Whisper API が一括で48スロットの音声を取得
+# デバイス別・日付別の一括処理
 time_slots = [f"{hour:02d}-{minute:02d}" for hour in range(24) for minute in [0, 30]]
 for slot in time_slots:
-    wav_data = await fetch_wav_from_vault("device123", "2025-06-25", slot)
+    wav_data = await fetch_wav_from_vault("device123", "2025-07-07", slot)
     if wav_data:
-        # 音声文字起こし処理...
+        # OpenSMILE特徴量抽出処理...
+```
+
+#### C. Whisper API からの文字起こし（解析エンジン）
+```python
+# Whisper API が一括で48スロットの音声を取得・処理
+async def process_daily_transcriptions(device_id, date):
+    time_slots = [f"{hour:02d}-{minute:02d}" for hour in range(24) for minute in [0, 30]]
+    
+    for slot in time_slots:
+        wav_data = await fetch_wav_from_vault(device_id, date, slot)
+        if wav_data:
+            # 音声文字起こし処理
+            transcription = await whisper_transcribe(wav_data)
+            
+            # 結果をVault APIに保存
+            await upload_transcription_result(device_id, date, slot, transcription)
 ```
 
 ### **アップロード系**
 
-#### 🚀 **システム起点エンドポイント（最重要）**
-- `POST /upload` - **WAV音声ファイルアップロード（全データパイプラインの起点）**
-  - **用途**: iOSアプリからのリアルタイム音声収集
-  - **重要性**: WatchMeシステム全体のデータ源泉
+#### 🚀 **中核エンドポイント: デバイス録音データ収集**
+- `POST /upload` - **iOSデバイスからのWAV音声ファイルアップロード**
+  - **主要用途**: iOSアプリからの30分スロット単位のリアルタイム音声収集
+  - **重要性**: WatchMeシステム全体のデータ源泉（全解析処理の起点）
   - **必須パラメータ**: `device_id` (デバイス固有ID)
-  - **保存方式（2モード）**:
-    1. **クライアント指定モード（推奨）**: 
-       - `X-File-Path`ヘッダーで保存パスを指定
-       - 形式: `device_id/YYYY-MM-DD/HH-MM.wav`
-       - 例: `X-File-Path: device123/2025-07-07/13-30.wav`
-       - バックデート対応、複数ファイルまとめ送信可能
-    2. **自動時刻モード（下位互換）**: 
-       - ヘッダー未指定時はサーバー受信時刻で30分スロット自動決定
-       - JST（日本標準時）基準
+  
+  **📋 保存方式（2モード対応）**:
+  
+  1. **🎯 クライアント指定モード（推奨・新機能）**: 
+     - デバイスが`X-File-Path`ヘッダーで保存パスを完全制御
+     - **形式**: `device_id/YYYY-MM-DD/HH-MM.wav`
+     - **例**: `X-File-Path: device123/2025-07-07/13-30.wav`
+     - **利点**: バックデート対応、ネットワーク復旧時のまとめ送信、時系列順序に依存しない柔軟な運用
+     - **セキュリティ**: パストラバーサル攻撃防御、正規表現による厳密な形式検証
+  
+  2. **⏰ 自動時刻モード（従来方式・下位互換）**: 
+     - ヘッダー未指定時はサーバー受信時刻で30分スロット自動決定
+     - JST（日本標準時）基準、`/raw/`フォルダに保存
+  
   - **保存先**: `{BASE_DIR}/{指定パス}` または `{BASE_DIR}/{device_id}/{date}/raw/`
-  - **セキュリティ**: パストラバーサル攻撃防御、正規表現による形式検証
+  - **上書き動作**: 同じパスの既存ファイルは無条件で上書き（最新の録音を優先）
 
 #### 📊 **解析結果アップロード系（device_idベース統一）**
 - `POST /upload-transcription` - 心理グラフ用 Whisper文字起こしJSONアップロード
@@ -787,21 +846,34 @@ WantedBy=multi-user.target
 
 ### 本番環境でのコード更新手順
 
+**📍 重要**: 作業ディレクトリは`/home/ubuntu/watchme_api`です（リポジトリ名とは異なります）
+
 ```bash
 # 1. サーバーにSSH接続
 ssh -i ~/watchme-key.pem ubuntu@3.24.16.82
 
-# 2. 最新コードを取得
-cd /home/ubuntu/watchme_api
+# 2. 作業ディレクトリに移動して最新コードを取得
+cd /home/ubuntu/watchme_api  # ← このディレクトリ名に注意
 git pull origin main
 
-# 3. サービス再起動（必要に応じて）
+# 3. サービス再起動（変更を反映するため必須）
 sudo systemctl restart watchme-vault-api.service
 
 # 4. 動作確認
 sudo systemctl status watchme-vault-api.service
 curl -s http://localhost:8000/status | head -5
+
+# 5. 新機能の動作確認（X-File-Pathヘッダーテスト）
+curl -X POST http://localhost:8000/upload \
+  -H "X-File-Path: testdevice/2025-07-07/14-00.wav" \
+  -F "device_id=testdevice" \
+  -F "file=@test.wav"
 ```
+
+**⚠️ ディレクトリ名に関する注意事項**:
+- GitHubリポジトリ名: `watchme-vault-api`
+- 本番サーバー作業ディレクトリ名: `/home/ubuntu/watchme_api`
+- systemdサービス名: `watchme-vault-api.service`
 
 ### トラブルシューティング
 
