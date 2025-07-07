@@ -32,7 +32,7 @@
 # =========================================
 
 
-from fastapi import FastAPI, UploadFile, File, Form, HTTPException, Query
+from fastapi import FastAPI, UploadFile, File, Form, HTTPException, Query, Request
 from fastapi.responses import JSONResponse, FileResponse, HTMLResponse
 from fastapi.staticfiles import StaticFiles
 from datetime import datetime
@@ -43,6 +43,7 @@ import os
 import shutil
 import json
 import urllib.parse
+import re
 
 # =========================================
 # 基本設定
@@ -66,26 +67,75 @@ app = FastAPI(title="WatchMe File Receiver")
 # =========================================
 @app.post("/upload")
 async def upload_file(
+    request: Request,
     file: UploadFile = File(...),
     user_id: str = Form("user123"),  # 下位互換性のために保持
     device_id: str = Form(...),     # デバイスIDを必須パラメータに変更
     timestamp: str = Form(None)     # 予約：iOS の送信タイムスタンプ
 ):
-    jst = pytz.timezone("Asia/Tokyo")
-    now = datetime.now(jst)
-    date_str = now.strftime("%Y-%m-%d")
-    slot_min = "00" if now.minute < 30 else "30"
-    slot_str = f"{now.hour:02d}-{slot_min}"
+    # X-File-Pathヘッダーから保存パスを取得
+    file_path = request.headers.get("X-File-Path")
+    
+    if file_path:
+        # クライアント指定のパスで保存する場合
+        
+        # パス形式の検証（device_id/YYYY-MM-DD/HH-MM.wav）
+        path_pattern = r'^[a-zA-Z0-9_-]+/\d{4}-\d{2}-\d{2}/\d{2}-\d{2}\.wav$'
+        if not re.match(path_pattern, file_path):
+            raise HTTPException(
+                status_code=400, 
+                detail="Invalid file path format. Expected: device_id/YYYY-MM-DD/HH-MM.wav"
+            )
+        
+        # パストラバーサル攻撃の防御
+        path_parts = file_path.split('/')
+        if any('..' in part or part.startswith('/') or part.startswith('\\') for part in path_parts):
+            raise HTTPException(
+                status_code=400, 
+                detail="Invalid path components detected"
+            )
+        
+        # フルパスの構築
+        save_path = os.path.join(BASE_DIR, file_path)
+        save_dir = os.path.dirname(save_path)
+        
+        # ディレクトリ作成
+        os.makedirs(save_dir, exist_ok=True)
+        
+        # ファイル保存（既存ファイルは無条件で上書き）
+        with open(save_path, "wb") as f:
+            f.write(await file.read())
+        
+        return JSONResponse({
+            "status": "ok", 
+            "path": save_path, 
+            "device_id": device_id,
+            "file_path": file_path,
+            "method": "client_specified"
+        })
+    
+    else:
+        # 従来の自動時刻ベース保存（下位互換性のため維持）
+        jst = pytz.timezone("Asia/Tokyo")
+        now = datetime.now(jst)
+        date_str = now.strftime("%Y-%m-%d")
+        slot_min = "00" if now.minute < 30 else "30"
+        slot_str = f"{now.hour:02d}-{slot_min}"
 
-    # device_idベースでディレクトリ構造を作成
-    save_dir = os.path.join(BASE_DIR, device_id, date_str, "raw")
-    os.makedirs(save_dir, exist_ok=True)
-    save_path = os.path.join(save_dir, f"{slot_str}.wav")
+        # device_idベースでディレクトリ構造を作成
+        save_dir = os.path.join(BASE_DIR, device_id, date_str, "raw")
+        os.makedirs(save_dir, exist_ok=True)
+        save_path = os.path.join(save_dir, f"{slot_str}.wav")
 
-    with open(save_path, "wb") as f:
-        f.write(await file.read())
+        with open(save_path, "wb") as f:
+            f.write(await file.read())
 
-    return JSONResponse({"status": "ok", "path": save_path, "device_id": device_id})
+        return JSONResponse({
+            "status": "ok", 
+            "path": save_path, 
+            "device_id": device_id,
+            "method": "auto_timestamp"
+        })
 
 # =========================================
 # 2) 文字起こし JSON アップロード (/upload-transcription)

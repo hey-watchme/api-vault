@@ -10,20 +10,23 @@ WatchMe プロジェクト用のファイル受け渡しAPIです。
 
 ### 1. 💭 **心理グラフ** (Psychology Graph)
 - **システム名**: `emotion-timeline`
-- **API**: `GET /api/users/{user_id}/logs/{date}/emotion-timeline`
+- **推奨API**: `GET /api/devices/{device_id}/logs/{date}/emotion-timeline`
+- **旧API**: `GET /api/users/{user_id}/logs/{date}/emotion-timeline` (将来廃止予定)
 - **データ元**: `emotion-timeline/emotion-timeline.json`
 - **機能**: ChatGPT解析による心理状態の時系列分析
 - **旧表記**: ~~感情タイムライン~~（混乱防止のため使用禁止）
 
 ### 2. 🎭 **行動グラフ** (Behavior Graph)
 - **システム名**: `sed-summary`
-- **API**: `GET /api/users/{user_id}/logs/{date}/sed-summary`
+- **推奨API**: `GET /api/devices/{device_id}/logs/{date}/sed-summary`
+- **旧API**: `GET /api/users/{user_id}/logs/{date}/sed-summary` (将来廃止予定)
 - **データ元**: `sed-summary/result.json`
 - **機能**: SED（音響イベント検出）による行動パターン分析
 
 ### 3. ❤️ **感情グラフ** (Emotion Graph)
 - **システム名**: `opensmile-summary`
-- **API**: `GET /api/users/{user_id}/logs/{date}/opensmile-summary`
+- **推奨API**: `GET /api/devices/{device_id}/logs/{date}/opensmile-summary`
+- **旧API**: `GET /api/users/{user_id}/logs/{date}/opensmile-summary` (将来廃止予定)
 - **データ元**: `opensmile-summary/result.json`
 - **機能**: OpenSMILE音声特徴量による感情状態分析
 
@@ -121,18 +124,18 @@ WATCHME_LOCAL_DEV=1 uvicorn app:app --reload --host 0.0.0.0 --port 8000
 **OpenSMILE、Whisper API等の外部サービスが使用する中核エンドポイント**
 
 **パラメータ:**
-- `user_id`: ユーザーID (例: user123)
+- `device_id`: デバイスID（必須、例: device123）
 - `date`: 日付 (YYYY-MM-DD形式, 例: 2025-06-25)
 - `slot`: 時間スロット (HH-MM形式, 例: 20-30)
-- `type`: ファイル種別 (省略時=wav, json指定可能)
+- `user_id`: ユーザーID（下位互換性、オプション）
 
 **使用例:**
 ```bash
 # 🎵 WAVファイルの取得 (OpenSMILE/Whisper APIから)
-curl "https://api.hey-watch.me/download?user_id=user123&date=2025-06-25&slot=20-30"
+curl "https://api.hey-watch.me/download?device_id=device123&date=2025-06-25&slot=20-30"
 
 # 📄 JSONファイルの取得 (解析結果取得時)
-curl "https://api.hey-watch.me/download?user_id=user123&date=2025-06-25&slot=20-30&type=json"
+curl "https://api.hey-watch.me/download?device_id=device123&date=2025-06-25&slot=20-30&type=json"
 ```
 
 **重要:** このエンドポイントがWatchMeエコシステムの**データ中継拠点**として機能
@@ -146,7 +149,7 @@ curl "https://api.hey-watch.me/download?user_id=user123&date=2025-06-25&slot=20-
 **使用例:**
 ```bash
 # 完全パス指定でのダウンロード
-curl "https://api.hey-watch.me/download-file?path=user123/2025-06-25/raw/20-30.wav"
+curl "https://api.hey-watch.me/download-file?path=device123/2025-06-25/raw/20-30.wav"
 ```
 
 ### **外部API連携パターン (推奨使用方法)**
@@ -154,8 +157,8 @@ curl "https://api.hey-watch.me/download-file?path=user123/2025-06-25/raw/20-30.w
 #### A. OpenSMILE API からの音声取得
 ```python
 # OpenSMILE が Vault API から WAV ファイルを取得
-async def fetch_wav_from_vault(user_id, date, time_slot):
-    url = f"https://api.hey-watch.me/download?user_id={user_id}&date={date}&slot={time_slot}"
+async def fetch_wav_from_vault(device_id, date, time_slot):
+    url = f"https://api.hey-watch.me/download?device_id={device_id}&date={date}&slot={time_slot}"
     async with aiohttp.ClientSession() as session:
         async with session.get(url) as response:
             if response.status == 200:
@@ -168,31 +171,62 @@ async def fetch_wav_from_vault(user_id, date, time_slot):
 # Whisper API が一括で48スロットの音声を取得
 time_slots = [f"{hour:02d}-{minute:02d}" for hour in range(24) for minute in [0, 30]]
 for slot in time_slots:
-    wav_data = await fetch_wav_from_vault("user123", "2025-06-25", slot)
+    wav_data = await fetch_wav_from_vault("device123", "2025-06-25", slot)
     if wav_data:
         # 音声文字起こし処理...
 ```
 
 ### **アップロード系**
-- `POST /upload` - WAV音声ファイルアップロード (iOSアプリから)(RAWフォルダ)
-- `POST /upload-transcription` - 心理グラフ(VibeGraph)用 Whisper文字起こしJSONアップロード (Whisper APIから)
-- `POST /upload-prompt` - 心理グラフ(VibeGraph)用ChatGPTプロンプトJSONアップロード
-- `POST /upload/analysis/emotion-timeline` - 心理グラフ(VibeGraph)JSONアップロード
-- `POST /upload/analysis/sed-timeline` - 行動グラフ(BehaviorGraph)(SEDタイムライン)JSONアップロード
-- `POST /upload/analysis/sed-summary` - 行動グラフ(BehaviorGraph)(SEDサマリー)JSONアップロード
-- `POST /upload/analysis/opensmile-features` - OpenSMILE個別特徴量JSONアップロード (時間スロット別)
-- `POST /upload/analysis/opensmile-summary` - 感情グラフJSONアップロード
+
+#### 🚀 **システム起点エンドポイント（最重要）**
+- `POST /upload` - **WAV音声ファイルアップロード（全データパイプラインの起点）**
+  - **用途**: iOSアプリからのリアルタイム音声収集
+  - **重要性**: WatchMeシステム全体のデータ源泉
+  - **必須パラメータ**: `device_id` (デバイス固有ID)
+  - **保存方式（2モード）**:
+    1. **クライアント指定モード（推奨）**: 
+       - `X-File-Path`ヘッダーで保存パスを指定
+       - 形式: `device_id/YYYY-MM-DD/HH-MM.wav`
+       - 例: `X-File-Path: device123/2025-07-07/13-30.wav`
+       - バックデート対応、複数ファイルまとめ送信可能
+    2. **自動時刻モード（下位互換）**: 
+       - ヘッダー未指定時はサーバー受信時刻で30分スロット自動決定
+       - JST（日本標準時）基準
+  - **保存先**: `{BASE_DIR}/{指定パス}` または `{BASE_DIR}/{device_id}/{date}/raw/`
+  - **セキュリティ**: パストラバーサル攻撃防御、正規表現による形式検証
+
+#### 📊 **解析結果アップロード系（device_idベース統一）**
+- `POST /upload-transcription` - 心理グラフ用 Whisper文字起こしJSONアップロード
+- `POST /upload-prompt` - 心理グラフ用 ChatGPTプロンプトJSONアップロード
+- `POST /upload/analysis/emotion-timeline` - 心理グラフ分析結果JSONアップロード
+- `POST /upload/analysis/sed-timeline` - 行動グラフ（SEDタイムライン）JSONアップロード
+- `POST /upload/analysis/sed-summary` - 行動グラフ（SEDサマリー）JSONアップロード
+- `POST /upload/analysis/opensmile-features` - OpenSMILE個別特徴量JSONアップロード（時間スロット別）
+- `POST /upload/analysis/opensmile-summary` - 感情グラフ分析結果JSONアップロード
+
+> **⚠️ 重要**: 全アップロード系エンドポイントで `device_id` が必須パラメータです
 
 ### **表示・確認系**
-- `GET /view-file` - JSONファイル内容表示(例: https://api.hey-watch.me/view-file?file_path=user123/2025-06-30/opensmile/10-00.json)
+- `GET /view-file` - JSONファイル内容表示(例: https://api.hey-watch.me/view-file?file_path=device123/2025-06-30/opensmile/10-00.json)
 - `GET /status` - HTML形式のファイル一覧表示(https://api.hey-watch.me/status)
 
 ### **API系 (Webダッシュボード用)**
+
+#### 🔥 **推奨: device_idベースAPI**
+- `GET /api/devices/{device_id}/logs/{date}/emotion-timeline` - 心理グラフ取得
+- `GET /api/devices/{device_id}/logs/{date}/sed-summary` - 行動グラフ（SEDサマリー）取得
+- `GET /api/devices/{device_id}/logs/{date}/opensmile-summary` - 感情グラフ取得
+- `GET /api/devices/{device_id}/logs/{date}/opensmile/{time_slot}` - OpenSMILE個別特徴量取得
+- `GET /api/devices/{device_id}/logs/{date}/opensmile` - OpenSMILE利用可能スロット一覧取得
+
+#### 🔄 **下位互換性API（将来廃止予定）**
 - `GET /api/users/{user_id}/logs/{date}/sed-summary` - SEDサマリー取得
 - `GET /api/users/{user_id}/logs/{date}/emotion-timeline` - 心理グラフ取得
 - `GET /api/users/{user_id}/logs/{date}/opensmile-summary` - 感情グラフ取得
 - `GET /api/users/{user_id}/logs/{date}/opensmile/{time_slot}` - OpenSMILE個別特徴量取得
 - `GET /api/users/{user_id}/logs/{date}/opensmile` - OpenSMILE利用可能スロット一覧取得
+
+> **⚠️ 重要**: 新規開発では `device_id` ベースのAPIを使用してください
 
 ## 🔗 EC2データアクセスガイド
 
@@ -205,27 +239,27 @@ for slot in time_slots:
 #### 1. WAV音声ファイルの取得
 ```bash
 # ✅ 推奨: 時間スロット指定による取得 (OpenSMILE/Whisper APIが使用)
-GET https://api.hey-watch.me/download?user_id=test_user&date=2025-06-26&slot=08-30
+GET https://api.hey-watch.me/download?device_id=test_device&date=2025-06-26&slot=08-30
 
 # ⚠️ 管理者向け: ファイルパス指定での取得
-GET https://api.hey-watch.me/download-file?path=test_user/2025-06-26/raw/20-30.wav
+GET https://api.hey-watch.me/download-file?path=test_device/2025-06-26/raw/20-30.wav
 ```
 
 #### 2. JSON解析結果の取得
 ```bash
 # ✅ 推奨: 時間スロット指定による取得 (外部APIから)
-GET https://api.hey-watch.me/download?user_id=test_user&date=2025-06-26&slot=08-30&type=json
+GET https://api.hey-watch.me/download?device_id=test_device&date=2025-06-26&slot=08-30&type=json
 
 # 📋 内容表示: JSONファイル内容をレスポンス内で表示
-GET https://api.hey-watch.me/view-file?file_path=test_user/2025-06-26/transcriptions/08-30.json
+GET https://api.hey-watch.me/view-file?file_path=test_device/2025-06-26/transcriptions/08-30.json
 
 # 🎯 専用API: SEDサマリー取得（Webダッシュボード用）
-GET https://api.hey-watch.me/api/users/test_user/logs/2025-06-26/sed-summary
+GET https://api.hey-watch.me/api/devices/test_device/logs/2025-06-26/sed-summary
 
 # 📊 各種解析結果の表示
-GET https://api.hey-watch.me/view-file?file_path=test_user/2025-06-26/emotion-timeline/emotion-timeline.json
-GET https://api.hey-watch.me/view-file?file_path=test_user/2025-06-26/sed/20-30.json
-GET https://api.hey-watch.me/view-file?file_path=test_user/2025-06-26/prompt/emotion-timeline_gpt_prompt.json
+GET https://api.hey-watch.me/view-file?file_path=test_device/2025-06-26/emotion-timeline/emotion-timeline.json
+GET https://api.hey-watch.me/view-file?file_path=test_device/2025-06-26/sed/20-30.json
+GET https://api.hey-watch.me/view-file?file_path=test_device/2025-06-26/prompt/emotion-timeline_gpt_prompt.json
 ```
 
 #### 3. ファイル一覧の確認
@@ -246,7 +280,7 @@ transcription_data = {"transcript": "こんにちは", "confidence": 0.95}
 # 2. WatchMe Vault APIに送信
 response = requests.post(
     "https://api.hey-watch.me/upload-transcription",
-    params={"user_id": "test_user", "date": "2025-06-26"},
+    params={"device_id": "test_device", "date": "2025-06-26"},
     json=transcription_data
 )
 
@@ -256,25 +290,25 @@ emotion_data = {"emotions": [{"time": 0, "emotion": "happiness", "score": 0.8}]}
 # 4. 心理グラフデータを送信
 response = requests.post(
     "https://api.hey-watch.me/upload/analysis/emotion-timeline",
-    params={"user_id": "test_user", "date": "2025-06-26"},
+    params={"device_id": "test_device", "date": "2025-06-26"},
     json=emotion_data
 )
 ```
 
 #### B. データ取得側API（例：React Webダッシュボード）
 ```javascript
-// 感情データの取得
-const fetchEmotionData = async (userId, date) => {
+// 心理グラフデータの取得（推奨API）
+const fetchEmotionData = async (deviceId, date) => {
   const response = await fetch(
-    `https://api.hey-watch.me/view-file?file_path=${userId}/${date}/emotion-timeline/emotion_timeline.json`
+    `https://api.hey-watch.me/api/devices/${deviceId}/logs/${date}/emotion-timeline`
   );
   return await response.json();
 };
 
-// SEDサマリーの取得（専用API）
-const fetchSedSummary = async (userId, date) => {
+// SEDサマリーの取得（推奨API）
+const fetchSedSummary = async (deviceId, date) => {
   const response = await fetch(
-    `https://api.hey-watch.me/api/users/${userId}/logs/${date}/sed-summary`
+    `https://api.hey-watch.me/api/devices/${deviceId}/logs/${date}/sed-summary`
   );
   return await response.json();
 };
@@ -282,33 +316,50 @@ const fetchSedSummary = async (userId, date) => {
 
 #### C. iOSアプリからの音声アップロード
 ```swift
-// FormDataでWAVファイルをアップロード
-let url = URL(string: "https://api.hey-watch.me/upload?user_id=test_user&date=2025-06-26")!
+// 新方式：クライアントが保存パスを指定
+let url = URL(string: "https://api.hey-watch.me/upload")!
 var request = URLRequest(url: url)
 request.httpMethod = "POST"
 
+// 保存パスをヘッダーで指定
+request.setValue("device123/2025-07-07/13-30.wav", forHTTPHeaderField: "X-File-Path")
+
+// FormDataでWAVファイルをアップロード
 let boundary = UUID().uuidString
 request.setValue("multipart/form-data; boundary=\(boundary)", forHTTPHeaderField: "Content-Type")
 
-// WAVファイルデータを含むFormDataを構築（時刻形式のファイル名）
-let httpBody = createFormData(boundary: boundary, audioData: wavData, filename: "08-30.wav")
+// WAVファイルデータを含むFormDataを構築
+let httpBody = createFormData(boundary: boundary, audioData: wavData, deviceId: "device123")
 request.httpBody = httpBody
+
+// 旧方式（下位互換）：ヘッダー未指定時は自動時刻ベース
+// X-File-Pathヘッダーを設定しない場合、サーバー受信時刻で自動的にファイル名が決定されます
 ```
 
 ### 📋 レスポンス形式とエラーハンドリング
 
 #### 成功レスポンス例
 ```json
-// WAVファイルアップロード成功
+// WAVファイルアップロード成功（クライアント指定モード）
 {
-  "message": "File uploaded successfully",
-  "file_path": "test_user/2025-06-26/raw/08-30.wav",
-  "file_size": 1234567
+  "status": "ok",
+  "path": "/home/ubuntu/data/data_accounts/device123/2025-07-07/13-30.wav",
+  "device_id": "device123",
+  "file_path": "device123/2025-07-07/13-30.wav",
+  "method": "client_specified"
+}
+
+// WAVファイルアップロード成功（自動時刻モード）
+{
+  "status": "ok",
+  "path": "/home/ubuntu/data/data_accounts/device123/2025-07-07/raw/13-30.wav",
+  "device_id": "device123",
+  "method": "auto_timestamp"
 }
 
 // 心理グラフJSON表示成功
 {
-  "file_path": "test_user/2025-06-26/emotion-timeline/emotion-timeline.json",
+  "file_path": "test_device/2025-06-26/emotion-timeline/emotion-timeline.json",
   "content": {
     "emotions": [
       {"time": 0, "emotion": "happiness", "score": 0.8}
@@ -318,7 +369,7 @@ request.httpBody = httpBody
 
 // SEDサマリー取得成功
 {
-  "file_path": "test_user/2025-06-26/sed-summary/result.json",
+  "file_path": "test_device/2025-06-26/sed-summary/result.json",
   "content": {
     "summary": "音響イベント分析結果",
     "events": ["speech", "music"]
@@ -328,9 +379,19 @@ request.httpBody = httpBody
 
 #### エラーレスポンス例
 ```json
+// パス形式が不正な場合（X-File-Path使用時）
+{
+  "detail": "Invalid file path format. Expected: device_id/YYYY-MM-DD/HH-MM.wav"
+}
+
+// パストラバーサル攻撃検出時
+{
+  "detail": "Invalid path components detected"
+}
+
 // ファイルが見つからない場合
 {
-  "detail": "File not found: test_user/2025-06-26/raw/09-00.wav"
+  "detail": "File not found: test_device/2025-06-26/raw/09-00.wav"
 }
 
 // 日付形式が不正な場合
@@ -354,17 +415,27 @@ from datetime import datetime
 
 # 設定
 BASE_URL = "https://api.hey-watch.me"
-USER_ID = "test_user"
+DEVICE_ID = "test_device"
 DATE = "2025-06-26"
 
 # 1. 音声ファイルをアップロード（iOSアプリから）
-def upload_audio(wav_file_path, filename):
+def upload_audio(wav_file_path, device_id, date, time_slot):
+    """
+    新方式：クライアントが保存パスを明示的に指定
+    """
+    # 保存パスの構築
+    file_path = f"{device_id}/{date}/{time_slot}.wav"
+    
     with open(wav_file_path, 'rb') as f:
-        files = {'file': (filename, f, 'audio/wav')}
+        files = {'file': (f'{time_slot}.wav', f, 'audio/wav')}
+        data = {'device_id': device_id}
+        headers = {'X-File-Path': file_path}
+        
         response = requests.post(
             f"{BASE_URL}/upload",
-            params={"user_id": USER_ID, "date": DATE},
-            files=files
+            data=data,
+            files=files,
+            headers=headers
         )
     return response.json()
 
@@ -377,7 +448,7 @@ def upload_transcription(transcript_text):
     }
     response = requests.post(
         f"{BASE_URL}/upload-transcription",
-        params={"user_id": USER_ID, "date": DATE},
+        params={"device_id": DEVICE_ID, "date": DATE},
         json=transcription_data
     )
     return response.json()
@@ -390,29 +461,27 @@ def upload_emotion_timeline(emotions):
     }
     response = requests.post(
         f"{BASE_URL}/upload/analysis/emotion-timeline",
-        params={"user_id": USER_ID, "date": DATE},
+        params={"device_id": DEVICE_ID, "date": DATE},
         json=emotion_data
     )
     return response.json()
 
 # 4. 心理グラフ用データを取得して表示（Webダッシュボードから）
 def fetch_all_data():
-    # 心理グラフデータの取得
+    # 心理グラフデータの取得（推奨API）
     emotion_response = requests.get(
-        f"{BASE_URL}/view-file",
-        params={"file_path": f"{USER_ID}/{DATE}/emotion-timeline/emotion-timeline.json"}
+        f"{BASE_URL}/api/devices/{DEVICE_ID}/logs/{DATE}/emotion-timeline"
     )
     
     # Whisper-APIから出力された文字起こしデータの取得（複数ファイル）
     transcription_08_30 = requests.get(
         f"{BASE_URL}/view-file",
-        params={"file_path": f"{USER_ID}/{DATE}/transcriptions/08-30.json"}
+        params={"file_path": f"{DEVICE_ID}/{DATE}/transcriptions/08-30.json"}
     )
     
-    # 行動グラフ(SEDサマリー)データの取得
+    # 行動グラフ(SEDサマリー)データの取得（推奨API）
     sed_summary_response = requests.get(
-        f"{BASE_URL}/view-file",
-        params={"file_path": f"{USER_ID}/{DATE}/sed-summary/result.json"}
+        f"{BASE_URL}/api/devices/{DEVICE_ID}/logs/{DATE}/sed-summary"
     )
     
     return {
@@ -425,7 +494,8 @@ def fetch_all_data():
 if __name__ == "__main__":
     # パイプライン実行
     print("1. 音声アップロード...")
-    upload_result = upload_audio("sample_audio.wav", "08-30.wav")
+    # 新方式：保存パスを明示的に指定
+    upload_result = upload_audio("sample_audio.wav", DEVICE_ID, DATE, "08-30")
     print(f"アップロード完了: {upload_result}")
     
     print("2. 文字起こし結果アップロード...")
@@ -529,7 +599,7 @@ export default EmotionDashboard;
 ### 📁 本番環境
 ```
 /home/ubuntu/data/data_accounts/
-├── user_id/
+├── device_id/
 │   └── YYYY-MM-DD/
 │       ├── raw/              # WAV音声ファイル（30分スロット）
 │       ├── transcriptions/   # 文字起こしJSON
@@ -563,7 +633,7 @@ export default EmotionDashboard;
 - **時間軸の基準**: ファイル名が後続処理の時間情報として機能
 - **自動マッピング**: 各解析（文字起こし、SED）が同じファイル名で関連付け
 - **タイムライン構築**: 感情分析やイベント検出の時系列データの基盤
-- **データ整合性**: user_id + date + 時刻スロットで一意性を保証
+- **データ整合性**: device_id + date + 時刻スロットで一意性を保証
 
 **📋 対応ファイルの例：**
 ```
@@ -577,7 +647,7 @@ sed/08-30.json               # 上記音声のSED結果
 ### ローカル開発環境（WATCHME_LOCAL_DEV=1時）
 ```
 vault/data/data_accounts/
-├── user_id/
+├── device_id/
 │   └── YYYY-MM-DD/
 │       ├── raw/              # WAV音声ファイル
 │       ├── transcriptions/   # 文字起こしJSON
@@ -616,8 +686,8 @@ vault/data/data_accounts/
 - 各種JSONやWAVの表示・取得：`GET /view-file`, `GET /download-file`
 
 #### 🔹 Web版ダッシュボード（React + Vite + Tailwind）
-- 心理グラフの取得：`GET /api/users/{user_id}/logs/{date}/emotion-timeline`
-- 行動グラフ（SEDサマリー）の取得：`GET /api/users/{user_id}/logs/{date}/sed-summary`
+- 心理グラフの取得：`GET /api/devices/{device_id}/logs/{date}/emotion-timeline`
+- 行動グラフ（SEDサマリー）の取得：`GET /api/devices/{device_id}/logs/{date}/sed-summary`
 
 ## 🚨 開発時の重要な注意事項
 
