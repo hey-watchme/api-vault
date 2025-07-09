@@ -79,12 +79,12 @@ async def upload_file(
     if file_path:
         # クライアント指定のパスで保存する場合
         
-        # パス形式の検証（device_id/YYYY-MM-DD/HH-MM.wav）
-        path_pattern = r'^[a-zA-Z0-9_-]+/\d{4}-\d{2}-\d{2}/\d{2}-\d{2}\.wav$'
+        # パス形式の検証（device_id/YYYY-MM-DD/raw/HH-MM.wav）
+        path_pattern = r'^[a-zA-Z0-9_-]+/\d{4}-\d{2}-\d{2}/raw/\d{2}-\d{2}\.wav$'
         if not re.match(path_pattern, file_path):
             raise HTTPException(
                 status_code=400, 
-                detail="Invalid file path format. Expected: device_id/YYYY-MM-DD/HH-MM.wav"
+                detail="Invalid file path format. Expected: device_id/YYYY-MM-DD/raw/HH-MM.wav"
             )
         
         # パストラバーサル攻撃の防御
@@ -115,27 +115,12 @@ async def upload_file(
         })
     
     else:
-        # 従来の自動時刻ベース保存（下位互換性のため維持）
-        jst = pytz.timezone("Asia/Tokyo")
-        now = datetime.now(jst)
-        date_str = now.strftime("%Y-%m-%d")
-        slot_min = "00" if now.minute < 30 else "30"
-        slot_str = f"{now.hour:02d}-{slot_min}"
-
-        # device_idベースでディレクトリ構造を作成
-        save_dir = os.path.join(BASE_DIR, device_id, date_str, "raw")
-        os.makedirs(save_dir, exist_ok=True)
-        save_path = os.path.join(save_dir, f"{slot_str}.wav")
-
-        with open(save_path, "wb") as f:
-            f.write(await file.read())
-
-        return JSONResponse({
-            "status": "ok", 
-            "path": save_path, 
-            "device_id": device_id,
-            "method": "auto_timestamp"
-        })
+        # X-File-Pathヘッダーがない場合はエラーを返す
+        # （iOSアプリは必ずX-File-Pathを送信するため、このケースは通常発生しない）
+        raise HTTPException(
+            status_code=400,
+            detail="X-File-Path header is required for audio file uploads"
+        )
 
 # =========================================
 # 2) 文字起こし JSON アップロード (/upload-transcription)
