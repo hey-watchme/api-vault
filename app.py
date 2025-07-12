@@ -341,10 +341,10 @@ def _walk_dir_with_links(path: Path, base_path: Path, indent_lvl: int, lines: Li
 async def status_all():
     try:
         if not os.path.exists(BASE_DIR):
-            return f"<h2>データフォルダが存在しません: {BASE_DIR}</h2>"
+            return HTMLResponse(f"<h2>データフォルダが存在しません: {BASE_DIR}</h2>")
 
         html_lines = [
-        """
+            """
         <!DOCTYPE html>
         <html>
         <head>
@@ -398,32 +398,32 @@ async def status_all():
             </div>
             <div class="content">
                 <pre>
-        """
-    ]
-    
-    base = Path(BASE_DIR)
-    
-    # ── DEVICE 層 ──
-    for device_dir in sorted(p for p in base.iterdir() if p.is_dir()):
-        html_lines.append(f'📱 <span style="font-weight: bold; color: #007bff;">{device_dir.name}/</span>')
+            """
+        ]
         
-        # ── DATE 層 (降順) ──
-        for date_name in _sort_dates([d.name for d in device_dir.iterdir() if d.is_dir()]):
-            date_path = device_dir / date_name
-            html_lines.append(f'  📅 <span style="font-weight: bold; color: #28a745;">{date_name}/</span>')
-            _walk_dir_with_links(date_path, base, 2, html_lines)
-            html_lines.append("")
-    
-    html_lines.extend([
-        """
+        base = Path(BASE_DIR)
+        
+        # ── DEVICE 層 ──
+        for device_dir in sorted(p for p in base.iterdir() if p.is_dir()):
+            html_lines.append(f'📱 <span style="font-weight: bold; color: #007bff;">{device_dir.name}/</span>')
+            
+            # ── DATE 層 (降順) ──
+            for date_name in _sort_dates([d.name for d in device_dir.iterdir() if d.is_dir()]):
+                date_path = device_dir / date_name
+                html_lines.append(f'  📅 <span style="font-weight: bold; color: #28a745;">{date_name}/</span>')
+                _walk_dir_with_links(date_path, base, 2, html_lines)
+                html_lines.append("")
+        
+        html_lines.extend([
+            """
                 </pre>
             </div>
         </body>
         </html>
-        """
-    ])
-    
-    return "\n".join(html_lines)
+            """
+        ])
+        
+        return HTMLResponse("\n".join(html_lines))
         
     except Exception as e:
         error_html = f"""
@@ -448,7 +448,7 @@ async def status_all():
         </body>
         </html>
         """
-        return error_html
+        return HTMLResponse(error_html)
 
 # =========================================
 # 5) 心理グラフ作成用 ChatGPT 分析 JSON アップロード
