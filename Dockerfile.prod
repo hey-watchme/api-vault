@@ -1,0 +1,47 @@
+# マルチステージビルドで本番用に最適化
+FROM python:3.12-slim as builder
+
+# ビルド時の作業ディレクトリ
+WORKDIR /build
+
+# 依存関係のインストール（キャッシュ効率化）
+COPY requirements.txt .
+RUN pip install --user --no-cache-dir -r requirements.txt
+
+# 本番イメージ
+FROM python:3.12-slim
+
+# セキュリティアップデート
+RUN apt-get update && apt-get upgrade -y \
+    && apt-get install -y --no-install-recommends \
+    curl \
+    && rm -rf /var/lib/apt/lists/*
+
+# 非rootユーザーの作成
+RUN useradd -m -u 1000 -s /bin/bash appuser
+
+# 作業ディレクトリ
+WORKDIR /app
+
+# ビルドステージから依存関係をコピー
+COPY --from=builder /root/.local /home/appuser/.local
+
+# アプリケーションコードをコピー
+COPY --chown=appuser:appuser app.py .
+
+# 環境変数でPythonパスを設定
+ENV PATH=/home/appuser/.local/bin:$PATH
+ENV PYTHONUNBUFFERED=1
+
+# ポート公開
+EXPOSE 8000
+
+# 非rootユーザーに切り替え
+USER appuser
+
+# ヘルスチェック用のcurlコマンド
+HEALTHCHECK --interval=30s --timeout=10s --start-period=40s --retries=3 \
+    CMD curl -f http://localhost:8000/health || exit 1
+
+# プロダクション設定でuvicornを起動（4ワーカー）
+CMD ["uvicorn", "app:app", "--host", "0.0.0.0", "--port", "8000", "--workers", "4", "--access-log", "--log-level", "warning"]

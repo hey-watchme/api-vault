@@ -1,0 +1,43 @@
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+env/
+venv/
+.venv/
+
+# テストとドキュメント
+test_*.py
+check_*.py
+verify_*.py
+generate_*.py
+*.md
+!README.md
+
+# Git
+.git/
+.gitignore
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# OS
+.DS_Store
+Thumbs.db
+
+# ログ
+*.log
+logs/
+
+# 環境変数（Dockerビルド時は.envを含めない）
+.env.example
+
+# 一時ファイル
+*.tmp
+*.temp
+test.wav

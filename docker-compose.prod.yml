@@ -1,0 +1,41 @@
+version: '3.8'
+
+services:
+  vault-api:
+    build:
+      context: .
+      dockerfile: Dockerfile.prod
+    container_name: watchme-vault-api
+    ports:
+      - "127.0.0.1:8000:8000"  # localhostのみにバインド（Nginx経由でアクセス）
+    environment:
+      # 環境変数は.envファイルから読み込み
+      - AWS_ACCESS_KEY_ID=${AWS_ACCESS_KEY_ID}
+      - AWS_SECRET_ACCESS_KEY=${AWS_SECRET_ACCESS_KEY}
+      - S3_BUCKET_NAME=${S3_BUCKET_NAME}
+      - AWS_REGION=${AWS_REGION}
+      - SUPABASE_URL=${SUPABASE_URL}
+      - SUPABASE_KEY=${SUPABASE_KEY}
+    volumes:
+      # ログディレクトリをマウント
+      - /var/log/watchme-vault-api:/app/logs
+    restart: always
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "10m"
+        max-file: "3"
+    networks:
+      - vault-network
+    deploy:
+      resources:
+        limits:
+          cpus: '2.0'
+          memory: 2G
+        reservations:
+          cpus: '0.5'
+          memory: 512M
+
+networks:
+  vault-network:
+    driver: bridge
