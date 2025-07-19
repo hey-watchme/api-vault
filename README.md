@@ -40,6 +40,16 @@ WAVファイルをS3にアップロードし、Supabaseにメタデータを登�
 - UTCへの変換は行いません
 - ユーザーの現地時間での記録を正確に保存します
 
+**設計思想: ユーザー中心のタイムスロット管理**
+本APIは世界標準（ISO 8601形式）に準拠しながら、ユーザーの生活時間を最重要視する設計を採用しています：
+
+1. **ユーザーの見ている時間を基準**: どこにいても、ユーザーが実際に体験した時間でデータを管理
+2. **タイムスロットの生成**: S3パス（例：`13-30`）は、ユーザーのローカル時間の時刻から生成
+3. **グラフ表示への配慮**: 後続のダッシュボードでは、ユーザーの時間軸でグラフを描画
+4. **世界対応**: 日本からアメリカに移動しても、各地での生活時間が正確に記録される
+
+この設計により、ユーザーは常に「自分が13:30に録音したファイル」として直感的にデータを理解できます。
+
 **metadata JSONの例:**
 ```json
 {
@@ -63,14 +73,24 @@ WAVファイルをS3にアップロードし、Supabaseにメタデータを登�
 
 **エラーレスポンス例:**
 ```json
-// X-File-Pathヘッダーがない場合
+// metadata JSONが不正な場合
 {
-  "detail": "X-File-Path header is required for audio file uploads"
+  "detail": "Invalid metadata JSON format"
 }
 
-// パス形式が不正な場合
+// device_idが不足している場合
 {
-  "detail": "Invalid file path format. Expected: device_id/YYYY-MM-DD/raw/HH-MM.wav"
+  "detail": "device_id is required in metadata"
+}
+
+// recorded_atが不足している場合
+{
+  "detail": "recorded_at is required in metadata"
+}
+
+// recorded_atの形式が不正な場合
+{
+  "detail": "Invalid recorded_at format. Expected ISO 8601: Unable to parse date string"
 }
 
 // ファイルサイズ超過
@@ -102,22 +122,30 @@ APIの死活監視とS3/Supabase接続状態を確認します。
 
 ### S3パス構造
 
-#### 入力パス（X-File-Pathヘッダー）
-```
-device_id/YYYY-MM-DD/raw/HH-MM.wav
-```
-例: `device123/2025-07-16/raw/14-30.wav`
+#### パス生成の仕組み
+S3パスは、metadata JSON内の`recorded_at`フィールドから自動生成されます：
 
-#### S3保存パス
+```
+metadata.recorded_at: "2025-07-19T13:30:00.123+09:00"
+     ↓ タイムゾーン変換なし（ユーザーのローカル時間を使用）
+     ↓ 日付: 2025-07-19, 時刻: 13:30 → スロット: 13-30
+     ↓
+S3保存パス: files/device123/2025-07-19/13-30/audio.wav
+```
+
+#### タイムスロットの計算ルール
+ユーザーのローカル時間の時・分から30分スロットを計算：
+- `13:15` → `13-00` (13:00-13:29の枠)
+- `13:30` → `13-30` (13:30-13:59の枠)  
+- `13:45` → `13-30` (13:30-13:59の枠)
+
+#### S3保存パス形式
 ```
 files/{device_id}/{YYYY-MM-DD}/{HH-MM}/audio.wav
 ```
-例: `files/device123/2025-07-16/14-30/audio.wav`
+例: `files/device123/2025-07-19/13-30/audio.wav`
 
-**パス変換ルール:**
-- `raw/`ディレクトリを削除
-- ファイル名を`audio.wav`に統一
-- プレフィックスとして`files/`を追加
+**重要**: パス内の時刻（例：`13-30`）は、ユーザーがその時刻に録音したローカル時間を表します。
 
 ### S3ファイルへのアクセス方法
 
@@ -409,30 +437,41 @@ docker-compose down
 
 ```swift
 // Swift実装例
-func uploadAudioFile(deviceId: String, date: String, timeSlot: String, audioData: Data) {
+func uploadAudioFile(deviceId: String, recordedAt: Date, audioData: Data) {
     let url = URL(string: "https://api.hey-watch.me/upload")!
     var request = URLRequest(url: url)
     request.httpMethod = "POST"
     
-    // 保存パスをヘッダーで指定（必須）
-    let filePath = "\(deviceId)/\(date)/raw/\(timeSlot).wav"
-    request.setValue(filePath, forHTTPHeaderField: "X-File-Path")
+    // ISO8601フォーマッター（タイムゾーン情報を含む）
+    let isoFormatter = ISO8601DateFormatter()
+    isoFormatter.formatOptions = [.withInternetDateTime, .withTimeZone, .withFractionalSeconds]
+    isoFormatter.timeZone = TimeZone.current  // ユーザーのローカルタイムゾーン
+    let recordedAtString = isoFormatter.string(from: recordedAt)
     
-    // FormDataでWAVファイルをアップロード
+    // metadata JSON の作成
+    let metadata: [String: Any] = [
+        "device_id": deviceId,
+        "recorded_at": recordedAtString
+    ]
+    
     let boundary = UUID().uuidString
     request.setValue("multipart/form-data; boundary=\(boundary)", forHTTPHeaderField: "Content-Type")
     
     // Multipart Form Dataの構築
     var body = Data()
     
-    // device_idフィールド
-    body.append("--\(boundary)\r\n".data(using: .utf8)!)
-    body.append("Content-Disposition: form-data; name=\"device_id\"\r\n\r\n".data(using: .utf8)!)
-    body.append("\(deviceId)\r\n".data(using: .utf8)!)
+    // metadata フィールド
+    if let jsonData = try? JSONSerialization.data(withJSONObject: metadata, options: []),
+       let jsonString = String(data: jsonData, encoding: .utf8) {
+        body.append("--\(boundary)\r\n".data(using: .utf8)!)
+        body.append("Content-Disposition: form-data; name=\"metadata\"\r\n".data(using: .utf8)!)
+        body.append("Content-Type: application/json\r\n\r\n".data(using: .utf8)!)
+        body.append("\(jsonString)\r\n".data(using: .utf8)!)
+    }
     
-    // fileフィールド
+    // file フィールド
     body.append("--\(boundary)\r\n".data(using: .utf8)!)
-    body.append("Content-Disposition: form-data; name=\"file\"; filename=\"\(timeSlot).wav\"\r\n".data(using: .utf8)!)
+    body.append("Content-Disposition: form-data; name=\"file\"; filename=\"audio.wav\"\r\n".data(using: .utf8)!)
     body.append("Content-Type: audio/wav\r\n\r\n".data(using: .utf8)!)
     body.append(audioData)
     body.append("\r\n".data(using: .utf8)!)
@@ -447,25 +486,25 @@ func uploadAudioFile(deviceId: String, date: String, timeSlot: String, audioData
     }.resume()
 }
 
-// 使用例
+// 使用例（ユーザーのローカル時間で録音）
 let deviceId = "device123"
-let date = "2025-07-18"
-let timeSlot = "14-30"  // 14:30-15:00の録音
-uploadAudioFile(deviceId: deviceId, date: date, timeSlot: timeSlot, audioData: wavData)
+let recordedAt = Date()  // 現在のローカル時間
+uploadAudioFile(deviceId: deviceId, recordedAt: recordedAt, audioData: wavData)
 ```
 
 ## 🔄 処理フロー
 
 ```mermaid
 graph LR
-    A[iOSデバイス] -->|WAVファイル + X-File-Path| B[Vault API]
-    B -->|1. パス検証| C{検証OK?}
+    A[iOSデバイス] -->|WAVファイル + metadata JSON| B[Vault API]
+    B -->|1. metadata検証| C{検証OK?}
     C -->|No| D[エラーレスポンス]
-    C -->|Yes| E[S3アップロード]
-    E -->|2. files/device/date/time/audio.wav| F[S3バケット]
-    E -->|3. メタデータ| G[Supabase]
-    G -->|device_id, recorded_at, file_path| H[audio_files テーブル]
-    B -->|4. 成功レスポンス| A
+    C -->|Yes| E[タイムスロット計算]
+    E -->|ローカル時間 → S3パス| F[S3アップロード]
+    F -->|files/device/date/timeslot/audio.wav| G[S3バケット]
+    F -->|メタデータ保存| H[Supabase]
+    H -->|device_id, recorded_at, file_path| I[audio_files テーブル]
+    B -->|成功レスポンス + timezone_info| A
 ```
 
 ## 🔧 開発・デバッグ
@@ -560,10 +599,15 @@ python verify_upload.py
 
 ## 更新履歴
 
-### 2025/7/19 - v2.2.0（タイムゾーン保持対応）
+### 2025/7/19 - v2.2.0（タイムゾーン保持対応・ユーザー中心設計）
 - **タイムゾーン処理の変更**: recorded_atのタイムゾーン情報を保持するように変更
 - **UTCへの変換を廃止**: ユーザーの現地時間をそのまま記録
-- **レスポンスに追加**: timezone_infoフィールドでタイムゾーン情報を返す
+- **設計思想の明確化**: ユーザーの生活時間を最重要視する設計を採用
+- **タイムスロット生成**: ユーザーのローカル時間から30分スロットを計算
+- **グラフ表示対応**: ダッシュボードでユーザーの時間軸でのグラフ表示を想定
+- **世界対応**: どこにいても「自分が13:30に録音した」として理解できる仕様
+- **API仕様変更**: X-File-Pathヘッダーからmetadata JSON形式に変更
+- **レスポンス強化**: timezone_infoフィールドでタイムゾーン情報を返す
 - **ミリ秒対応**: ISO 8601形式でミリ秒を含む時刻に対応
 
 ### 2025/7/18 - v2.1.0（Dockerデプロイ対応）
