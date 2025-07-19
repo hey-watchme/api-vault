@@ -32,6 +32,8 @@ from supabase import create_client, Client
 from typing import Optional
 import pytz
 from dotenv import load_dotenv
+import json
+from dateutil import parser as date_parser
 
 # .envファイルを読み込む
 load_dotenv()
@@ -92,14 +94,13 @@ async def status():
 async def upload_file(
     request: Request,
     file: UploadFile = File(...),
-    device_id: str = Form(...),
+    metadata: str = Form(...),
 ):
     """
     WAVファイルをS3にアップロードし、Supabaseにメタデータを登録する
     
     必須:
-    - X-File-Pathヘッダー: device_id/YYYY-MM-DD/raw/HH-MM.wav形式
-    - device_id: デバイスID
+    - metadata: JSON形式のメタデータ（device_id, recorded_atを含む）
     - file: WAVファイル
     """
     
@@ -117,42 +118,80 @@ async def upload_file(
             detail="Supabase client not configured. Please set Supabase credentials."
         )
     
-    # X-File-Pathヘッダーから保存パスを取得
-    file_path = request.headers.get("X-File-Path")
-    
-    if not file_path:
+    # metadata JSONのパース
+    try:
+        metadata_dict = json.loads(metadata)
+    except json.JSONDecodeError:
         raise HTTPException(
             status_code=400,
-            detail="X-File-Path header is required for audio file uploads"
+            detail="Invalid metadata JSON format"
         )
     
-    # パス形式の検証（device_id/YYYY-MM-DD/raw/HH-MM.wav）
-    path_pattern = r'^([a-zA-Z0-9_-]+)/(\d{4}-\d{2}-\d{2})/raw/(\d{2}-\d{2})\.wav$'
-    match = re.match(path_pattern, file_path)
-    
-    if not match:
-        raise HTTPException(
-            status_code=400, 
-            detail="Invalid file path format. Expected: device_id/YYYY-MM-DD/raw/HH-MM.wav"
-        )
-    
-    # パス要素の抽出
-    path_device_id, date, time_block = match.groups()
-    
-    # device_idの一致確認
-    if path_device_id != device_id:
+    # 必須フィールドの確認
+    if "device_id" not in metadata_dict:
         raise HTTPException(
             status_code=400,
-            detail="Device ID in path does not match the provided device_id parameter"
+            detail="device_id is required in metadata"
         )
     
-    # パストラバーサル攻撃の防御
-    path_parts = file_path.split('/')
-    if any('..' in part or part.startswith('/') or part.startswith('\\') for part in path_parts):
+    if "recorded_at" not in metadata_dict:
         raise HTTPException(
-            status_code=400, 
-            detail="Invalid path components detected"
+            status_code=400,
+            detail="recorded_at is required in metadata"
         )
+    
+    device_id = metadata_dict["device_id"]
+    recorded_at_str = metadata_dict["recorded_at"]
+    
+    # デバッグログ
+    print(f"📊 受信したメタデータ: device_id={device_id}, recorded_at={recorded_at_str}")
+    
+    # recorded_atのパース（ISO 8601形式）
+    # 重要: ユーザーが録音したローカル時間を保持するため、タイムゾーン変換は行わない
+    try:
+        recorded_at = date_parser.isoparse(recorded_at_str)
+        print(f"📊 パース後のrecorded_at（ユーザーのローカル時間）: {recorded_at}")
+        
+        # タイムゾーン情報が含まれているか確認
+        if recorded_at.tzinfo is None:
+            # タイムゾーン情報がない場合は警告を出す
+            print(f"⚠️ 警告: recorded_atにタイムゾーン情報が含まれていません: {recorded_at_str}")
+            # デフォルトでUTCとして扱う（後方互換性のため）
+            recorded_at = pytz.UTC.localize(recorded_at)
+            print(f"📊 UTCタイムゾーンを仮定: {recorded_at}")
+        else:
+            # タイムゾーン情報がある場合は、そのまま保持する（変換しない）
+            print(f"📊 タイムゾーン情報を保持: {recorded_at} (UTC offset: {recorded_at.strftime('%z')})")
+    except Exception as e:
+        raise HTTPException(
+            status_code=400,
+            detail=f"Invalid recorded_at format. Expected ISO 8601: {str(e)}"
+        )
+    
+    # recorded_atから日付と時刻ブロックを抽出
+    # 重要: ユーザーのローカル時間のまま処理する（タイムゾーン変換なし）
+    # S3のパス生成では、クライアントから送られてきたタイムスタンプが持つ
+    # ローカルの時刻情報をそのまま使用します
+    # 例: "2025-07-19T14:15:00+09:00" → パスは "14-00" (UTCの05-00ではない)
+    
+    # タイムゾーン変換を行わず、recorded_atオブジェクトの時刻をそのまま使用
+    year = recorded_at.year
+    month = recorded_at.month
+    day = recorded_at.day
+    hour = recorded_at.hour    # ユーザーのローカル時間の「時」
+    minute = recorded_at.minute  # ユーザーのローカル時間の「分」
+    
+    # パス用の日付文字列
+    date = f"{year:04d}-{month:02d}-{day:02d}"
+    
+    # 時刻を30分スロットに変換（00-00, 00-30, 01-00, ... 23-30）
+    # 例: 14:15 → 14-00, 14:45 → 14-30
+    slot_minute = 0 if minute < 30 else 30
+    time_block = f"{hour:02d}-{slot_minute:02d}"
+    
+    print(f"📊 S3パス生成（ユーザーのローカル時間をそのまま使用）:")
+    print(f"   入力: {recorded_at_str}")
+    print(f"   日付: {date}, 時刻スロット: {time_block}")
     
     # 新しいS3パス構造の構築
     # files/{device_id}/{YYYY-MM-DD}/{HH-MM}/audio.wav
@@ -177,17 +216,14 @@ async def upload_file(
             ContentType='audio/wav'
         )
         
-        # 録音開始時刻の計算
-        # date (YYYY-MM-DD) と time_block (HH-MM) から datetime を作成
-        hour, minute = map(int, time_block.split('-'))
-        recorded_at = datetime.strptime(f"{date} {hour:02d}:{minute:02d}:00", "%Y-%m-%d %H:%M:%S")
-        recorded_at = pytz.UTC.localize(recorded_at)
+        # recorded_atは既にmetadataから取得済み
         
         # Supabaseにメタデータを登録
         # 基本的なカラムのみで登録（既存のテーブル構造に合わせる）
+        # 重要: recorded_atはユーザーのローカル時間をそのまま保存
         audio_file_data = {
             "device_id": device_id,
-            "recorded_at": recorded_at.isoformat(),
+            "recorded_at": recorded_at.isoformat(),  # タイムゾーン情報を含むISO8601形式
             "file_path": s3_key
         }
         
@@ -209,9 +245,10 @@ async def upload_file(
             "status": "ok",
             "s3_key": s3_key,
             "device_id": device_id,
-            "recorded_at": recorded_at.isoformat(),
+            "recorded_at": recorded_at.isoformat(),  # ユーザーのローカル時間を返す
             "file_size_bytes": file_size,
-            "method": "s3_upload"
+            "method": "s3_upload",
+            "timezone_info": recorded_at.strftime("%z") if recorded_at.tzinfo else "unknown"
         }
         
         # Supabaseの結果からIDを取得（存在する場合）
@@ -287,7 +324,7 @@ async def root():
         <div class="endpoint">
             <span class="method post">POST</span> <code>/upload</code>
             <p>WAVファイルをS3にアップロードし、Supabaseにメタデータを登録します。</p>
-            <p><strong>必須:</strong> X-File-Pathヘッダー（形式: device_id/YYYY-MM-DD/raw/HH-MM.wav）</p>
+            <p><strong>必須:</strong> metadata JSON（device_id, recorded_atを含む）</p>
         </div>
         
         <div class="endpoint">

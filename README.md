@@ -28,21 +28,36 @@ WAVファイルをS3にアップロードし、Supabaseにメタデータを登�
 
 **リクエスト:**
 - **Headers:**
-  - `X-File-Path`: 必須。形式: `device_id/YYYY-MM-DD/raw/HH-MM.wav`
   - `Content-Type`: `multipart/form-data`
 - **Form Data:**
-  - `device_id`: デバイスID（必須）
+  - `metadata`: JSON形式のメタデータ（必須）
+    - `device_id`: デバイスID（必須）
+    - `recorded_at`: 録音時刻（必須、ISO 8601形式、タイムゾーン情報を含む）
   - `file`: WAVファイル（必須、最大100MB）
+
+**重要: タイムゾーンの扱い**
+- `recorded_at`に含まれるタイムゾーン情報はそのまま保持されます
+- UTCへの変換は行いません
+- ユーザーの現地時間での記録を正確に保存します
+
+**metadata JSONの例:**
+```json
+{
+  "device_id": "device123",
+  "recorded_at": "2025-07-19T13:30:00.123+09:00"
+}
+```
 
 **レスポンス例（成功時）:**
 ```json
 {
   "status": "ok",
-  "s3_key": "files/device123/2025-07-16/14-30/audio.wav",
+  "s3_key": "files/device123/2025-07-19/13-30/audio.wav",
   "device_id": "device123",
-  "recorded_at": "2025-07-16T14:30:00+00:00",
+  "recorded_at": "2025-07-19T13:30:00.123+09:00",
   "file_size_bytes": 2458624,
-  "method": "s3_upload"
+  "method": "s3_upload",
+  "timezone_info": "+0900"
 }
 ```
 
@@ -240,12 +255,13 @@ audio.play();
 | カラム名 | 型 | 説明 | 制約 |
 |---------|-----|------|------|
 | device_id | string | デバイスID | NOT NULL |
-| recorded_at | timestamp with timezone | 録音開始時刻 | NOT NULL |
+| recorded_at | timestamp with timezone | 録音開始時刻（ユーザーのローカル時間） | NOT NULL |
 | file_path | string | S3のファイルパス | NOT NULL |
 
 **注意事項:**
 - `(device_id, recorded_at)`の組み合わせにユニーク制約があります
 - 同じデバイスで同じ時刻のデータは上書きできません
+- **重要**: `recorded_at`はユーザーが録音した現地時間を保持します（UTCに変換されません）
 
 **将来的に追加予定のカラム（現在は未実装）:**
 | カラム名 | 型 | 説明 |
@@ -543,6 +559,12 @@ python verify_upload.py
 → ファイルを圧縮するか、分割してアップロード
 
 ## 更新履歴
+
+### 2025/7/19 - v2.2.0（タイムゾーン保持対応）
+- **タイムゾーン処理の変更**: recorded_atのタイムゾーン情報を保持するように変更
+- **UTCへの変換を廃止**: ユーザーの現地時間をそのまま記録
+- **レスポンスに追加**: timezone_infoフィールドでタイムゾーン情報を返す
+- **ミリ秒対応**: ISO 8601形式でミリ秒を含む時刻に対応
 
 ### 2025/7/18 - v2.1.0（Dockerデプロイ対応）
 - **Dockerコンテナ化**: systemdからDockerコンテナによる運用に移行
