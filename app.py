@@ -189,6 +189,9 @@ async def upload_file(
     slot_minute = 0 if minute < 30 else 30
     time_block = f"{hour:02d}-{slot_minute:02d}"
     
+    # local_dateオブジェクトの作成（YYYY-MM-DD形式）
+    local_date = date  # この値をデータベースのlocal_dateカラムに保存
+    
     print(f"📊 S3パス生成（ユーザーのローカル時間をそのまま使用）:")
     print(f"   入力: {recorded_at_str}")
     print(f"   日付: {date}, 時刻スロット: {time_block}")
@@ -221,20 +224,13 @@ async def upload_file(
         # Supabaseにメタデータを登録
         # 基本的なカラムのみで登録（既存のテーブル構造に合わせる）
         # 重要: recorded_atはユーザーのローカル時間をそのまま保存
+        # 注: recorded_atはPKの一部なので、削除予定でも現在は必須
         audio_file_data = {
             "device_id": device_id,
-            "recorded_at": recorded_at.isoformat(),  # タイムゾーン情報を含むISO8601形式
-            "file_path": s3_key
-        }
-        
-        # オプションカラムがあるか確認して追加
-        # （将来的にカラムが追加された場合に対応）
-        optional_fields = {
-            "file_size_bytes": file_size,
-            "duration_seconds": None,
-            "transcriber_status": "pending",
-            "behavior_status": "pending", 
-            "emotion_status": "pending"
+            "recorded_at": recorded_at.isoformat(),  # タイムゾーン情報を含むISO8601形式（PKのため必須）
+            "file_path": s3_key,
+            "local_date": local_date,  # YYYY-MM-DD形式のローカル日付
+            "time_block": time_block    # HH-MM形式のタイムブロック（00-00, 00-30等）
         }
         
         # Supabaseへの挿入

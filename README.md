@@ -282,26 +282,25 @@ audio.play();
 **現在の実装で使用しているカラム:**
 | カラム名 | 型 | 説明 | 制約 |
 |---------|-----|------|------|
-| device_id | string | デバイスID | NOT NULL |
-| recorded_at | timestamp with timezone | 録音開始時刻（ユーザーのローカル時間） | NOT NULL |
-| file_path | string | S3のファイルパス | NOT NULL |
+| device_id | TEXT | デバイスID | NOT NULL, PRIMARY KEY の一部 |
+| recorded_at | TIMESTAMPTZ | 録音開始時刻（ユーザーのローカル時間） | NOT NULL, PRIMARY KEY の一部 |
+| file_path | TEXT | S3のファイルパス | NOT NULL |
+| local_date | DATE | ローカル日付（YYYY-MM-DD形式） | NULL |
+| time_block | VARCHAR(5) | タイムブロック（HH-MM形式、30分単位） | NULL |
+| transcriptions_status | TEXT | 文字起こし処理状態 | NOT NULL DEFAULT 'pending' |
+| behavior_features_status | TEXT | 行動分析処理状態 | NOT NULL DEFAULT 'pending' |
+| emotion_features_status | TEXT | 感情分析処理状態 | NOT NULL DEFAULT 'pending' |
+| created_at | TIMESTAMPTZ | レコード作成日時 | DEFAULT now() |
+
+**インデックス:**
+- PRIMARY KEY: `(device_id, recorded_at)`
+- `idx_audio_files_device_date`: `(device_id, local_date)` - デバイスと日付での検索高速化
+- `idx_audio_files_device_date_block`: `(device_id, local_date, time_block)` - デバイス、日付、時間帯での検索高速化
 
 **注意事項:**
-- `(device_id, recorded_at)`の組み合わせにユニーク制約があります
-- 同じデバイスで同じ時刻のデータは上書きできません
-- **重要**: `recorded_at`はユーザーが録音した現地時間を保持します（UTCに変換されません）
-
-**将来的に追加予定のカラム（現在は未実装）:**
-| カラム名 | 型 | 説明 |
-|---------|-----|------|
-| id | UUID | 主キー |
-| file_size_bytes | integer | ファイルサイズ（バイト） |
-| duration_seconds | float | 音声の長さ（秒） |
-| transcriber_status | string | 文字起こし処理状態 |
-| behavior_status | string | 行動分析処理状態 |
-| emotion_status | string | 感情分析処理状態 |
-| created_at | timestamp | レコード作成日時 |
-| updated_at | timestamp | レコード更新日時 |
+- 同じデバイスで同じ時刻のデータは重複不可（PRIMARY KEY制約）
+- `local_date`と`time_block`は`file_path`から構造化された情報として保存
+- `recorded_at`は将来的に削除予定ですが、現在はPRIMARY KEYの一部として必須
 
 ## 🚀 セットアップ
 
@@ -349,19 +348,30 @@ SUPABASE_KEY=your_anon_key
 
 ### Supabaseの設定
 
-1. Supabaseプロジェクトでテーブルを作成（存在しない場合）：
+1. Supabaseプロジェクトでテーブルを作成：
 
 ```sql
-CREATE TABLE IF NOT EXISTS audio_files (
-    device_id TEXT NOT NULL,
-    recorded_at TIMESTAMPTZ NOT NULL,
-    file_path TEXT NOT NULL,
-    PRIMARY KEY (device_id, recorded_at)
-);
+CREATE TABLE public.audio_files (
+  device_id TEXT NOT NULL,
+  recorded_at TIMESTAMPTZ NOT NULL,
+  file_path TEXT NOT NULL,
+  transcriptions_status TEXT NOT NULL DEFAULT 'pending'::text,
+  behavior_features_status TEXT NOT NULL DEFAULT 'pending'::text,
+  emotion_features_status TEXT NOT NULL DEFAULT 'pending'::text,
+  created_at TIMESTAMPTZ NULL DEFAULT now(),
+  local_date DATE NULL,
+  time_block VARCHAR(5) NULL,
+  CONSTRAINT audio_files_pkey PRIMARY KEY (device_id, recorded_at)
+) TABLESPACE pg_default;
 
 -- インデックスの作成（パフォーマンス向上）
-CREATE INDEX IF NOT EXISTS idx_audio_files_device_id ON audio_files(device_id);
-CREATE INDEX IF NOT EXISTS idx_audio_files_recorded_at ON audio_files(recorded_at);
+CREATE INDEX IF NOT EXISTS idx_audio_files_device_date 
+  ON public.audio_files USING btree (device_id, local_date) 
+  TABLESPACE pg_default;
+
+CREATE INDEX IF NOT EXISTS idx_audio_files_device_date_block 
+  ON public.audio_files USING btree (device_id, local_date, time_block) 
+  TABLESPACE pg_default;
 ```
 
 ### インストールと起動
@@ -599,6 +609,13 @@ python verify_upload.py
 
 ## 更新履歴
 
+### 2025/8/4 - v2.3.0（データベース構造の最適化）
+- **新カラム追加**: `local_date`（DATE型）と`time_block`（VARCHAR(5)型）を追加
+- **データ構造化**: ファイルパスの日付と時間帯情報をデータベースカラムとして構造化
+- **検索性能向上**: 日付と時間帯での検索を高速化するインデックスを追加
+- **不要カラム削除準備**: `file_size_bytes`と`duration_seconds`カラムを削除（未使用のため）
+- **コード最適化**: 未使用のoptional_fields辞書を削除してコードをクリーンアップ
+
 ### 2025/7/19 - v2.2.0（タイムゾーン保持対応・ユーザー中心設計）
 - **タイムゾーン処理の変更**: recorded_atのタイムゾーン情報を保持するように変更
 - **UTCへの変換を廃止**: ユーザーの現地時間をそのまま記録
@@ -632,8 +649,8 @@ python verify_upload.py
 ## 開発者情報
 
 - 作成者: Kaya Matsumoto
-- 最終更新: 2025年7月18日
-- バージョン: 2.1.0（Dockerデプロイ対応）
+- 最終更新: 2025年8月4日
+- バージョン: 2.3.0（データベース構造の最適化）
 - リポジトリ: [プライベートリポジトリ]
 
 ## ライセンス
