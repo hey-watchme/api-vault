@@ -20,6 +20,9 @@ WatchMeプロジェクトにおけるファイル管理のエントリーポイ�
 | POST | `/upload` | WAVファイルをS3にアップロード |
 | GET | `/health` | APIの死活監視 |
 | GET | `/status` | APIの死活監視（/healthのエイリアス） |
+| GET | `/api/audio-files` | 音声ファイル一覧を取得（API Manager用） |
+| GET | `/api/audio-files/presigned-url` | 音声ファイルの署名付きURLを生成 |
+| GET | `/api/devices` | 登録されているデバイス一覧を取得 |
 | GET | `/` | API情報ページ（HTML） |
 
 ### POST /upload
@@ -115,6 +118,94 @@ APIの死活監視とS3/Supabase接続状態を確認します。
   "timestamp": "2025-07-16T10:30:00+00:00",
   "s3_configured": true,
   "supabase_configured": true
+}
+```
+
+### GET /api/audio-files
+
+音声ファイル一覧を取得します（API Manager用）。
+
+**用途**: API Manager画面で音声ファイル一覧を表示し、処理ステータスやファイル情報を確認する
+
+**クエリパラメータ:**
+- `device_id` (optional): 特定デバイスのファイルのみ取得
+- `date_from` (optional): 開始日（YYYY-MM-DD形式）
+- `date_to` (optional): 終了日（YYYY-MM-DD形式）
+- `limit` (optional): 取得件数上限（デフォルト：100）
+- `offset` (optional): オフセット（ページネーション用）
+
+**レスポンス例:**
+```json
+{
+  "files": [
+    {
+      "device_id": "9f7d6e27-98c3-4c19-bdfb-f7fda58b9a93",
+      "recorded_at": "2025-08-25T02:01:01.408+00:00",
+      "file_path": "files/9f7d6e27-98c3-4c19-bdfb-f7fda58b9a93/2025-08-25/11-00/audio.wav",
+      "local_date": "2025-08-25",
+      "time_block": "11-00",
+      "transcriptions_status": "completed",
+      "behavior_features_status": "completed",
+      "emotion_features_status": "completed",
+      "file_exists": true,
+      "file_size_bytes": 1920044,
+      "last_modified": "2025-08-25T02:01:55+00:00",
+      "created_at": "2025-08-25T02:01:54.911469+00:00"
+    }
+  ],
+  "total_count": 1,
+  "limit": 100,
+  "offset": 0
+}
+```
+
+### GET /api/audio-files/presigned-url
+
+音声ファイルの署名付きURLを生成します（ブラウザ再生・ダウンロード用）。
+
+**用途**: API Manager画面で音声ファイルをブラウザ上で直接再生・ダウンロードする
+
+**クエリパラメータ:**
+- `file_path` (required): S3ファイルパス（例：`files/device123/2025-08-25/11-00/audio.wav`）
+- `expiration_hours` (optional): URL有効期限（時間、デフォルト：1、最大：24）
+
+**レスポンス例:**
+```json
+{
+  "presigned_url": "https://watchme-vault.s3.ap-southeast-2.amazonaws.com/files/device123/2025-08-25/11-00/audio.wav?AWSAccessKeyId=AKIA...&Signature=...&Expires=1756094854",
+  "file_path": "files/device123/2025-08-25/11-00/audio.wav",
+  "expires_in_hours": 1,
+  "expires_at": "2025-08-25T04:07:34.387860+00:00",
+  "bucket": "watchme-vault"
+}
+```
+
+**エラーレスポンス例:**
+```json
+// ファイルが存在しない場合
+{
+  "detail": "Audio file not found: files/device123/2025-08-25/11-00/audio.wav"
+}
+```
+
+### GET /api/devices
+
+登録されているデバイス一覧を取得します。
+
+**用途**: API Manager画面でデバイス選択フィルターを表示する
+
+**レスポンス例:**
+```json
+{
+  "devices": [
+    {
+      "device_id": "9f7d6e27-98c3-4c19-bdfb-f7fda58b9a93"
+    },
+    {
+      "device_id": "d067d407-cf73-4174-a9c1-d91fb60d64d0"
+    }
+  ],
+  "total_count": 2
 }
 ```
 
@@ -609,6 +700,17 @@ python verify_upload.py
 
 ## 更新履歴
 
+### 2025/8/25 - v2.4.0（API Manager統合機能追加）
+- **新エンドポイント追加**: API Manager統合用の3つのエンドポイントを追加
+  - `GET /api/audio-files` - 音声ファイル一覧取得（フィルタリング・ページネーション対応）
+  - `GET /api/audio-files/presigned-url` - 署名付きURL生成（ブラウザ再生・ダウンロード用）
+  - `GET /api/devices` - 登録デバイス一覧取得
+- **S3メタデータ統合**: ファイル存在確認・サイズ・更新日時の自動取得
+- **処理ステータス表示**: 転写・行動分析・感情分析の処理状況を一覧表示
+- **セキュリティ強化**: 署名付きURLによる一時的・安全なファイルアクセス
+- **API Manager対応**: 音声データの品質確認・再生機能をWeb UIで実現
+- **本番環境デプロイ完了**: Docker環境での新機能動作確認済み
+
 ### 2025/8/4 - v2.3.0（データベース構造の最適化）
 - **新カラム追加**: `local_date`（DATE型）と`time_block`（VARCHAR(5)型）を追加
 - **データ構造化**: ファイルパスの日付と時間帯情報をデータベースカラムとして構造化
@@ -649,8 +751,8 @@ python verify_upload.py
 ## 開発者情報
 
 - 作成者: Kaya Matsumoto
-- 最終更新: 2025年8月4日
-- バージョン: 2.3.0（データベース構造の最適化）
+- 最終更新: 2025年8月25日
+- バージョン: 2.4.0（API Manager統合機能追加）
 - リポジトリ: [プライベートリポジトリ]
 
 ## ライセンス
