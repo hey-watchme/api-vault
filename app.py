@@ -21,9 +21,9 @@
 #
 # =========================================
 
-from fastapi import FastAPI, UploadFile, File, Form, HTTPException, Request
+from fastapi import FastAPI, UploadFile, File, Form, HTTPException, Request, Query
 from fastapi.responses import JSONResponse, HTMLResponse
-from datetime import datetime
+from datetime import datetime, timedelta
 import os
 import re
 import boto3
@@ -268,6 +268,203 @@ async def upload_file(
         )
 
 # =========================================
+# 音声ファイル管理エンドポイント（API Manager用）
+# =========================================
+
+@app.get("/api/audio-files")
+async def get_audio_files(
+    device_id: Optional[str] = None,
+    date_from: Optional[str] = None,
+    date_to: Optional[str] = None,
+    limit: int = 100,
+    offset: int = 0
+):
+    """
+    音声ファイル一覧を取得（API Manager用）
+    
+    Args:
+        device_id: デバイスID（指定時はそのデバイスのファイルのみ）
+        date_from: 開始日（YYYY-MM-DD形式）
+        date_to: 終了日（YYYY-MM-DD形式）
+        limit: 取得件数上限（デフォルト：100）
+        offset: オフセット（ページネーション用）
+    """
+    if not supabase_client:
+        raise HTTPException(
+            status_code=500,
+            detail="Supabase client not configured"
+        )
+    
+    try:
+        # クエリ構築
+        query = supabase_client.table("audio_files").select("""
+            device_id,
+            recorded_at,
+            file_path,
+            local_date,
+            time_block,
+            transcriptions_status,
+            behavior_features_status,
+            emotion_features_status,
+            created_at
+        """)
+        
+        # フィルター適用
+        if device_id:
+            query = query.eq("device_id", device_id)
+        
+        if date_from:
+            query = query.gte("local_date", date_from)
+        
+        if date_to:
+            query = query.lte("local_date", date_to)
+        
+        # ソートと制限
+        query = query.order("recorded_at", desc=True)
+        query = query.range(offset, offset + limit - 1)
+        
+        result = query.execute()
+        
+        # ファイル情報を取得してS3メタデータを追加
+        files_with_info = []
+        for file_record in result.data:
+            file_info = {
+                **file_record,
+                "file_exists": False,
+                "file_size_bytes": None,
+                "last_modified": None
+            }
+            
+            # S3ファイル存在確認とメタデータ取得
+            if s3_client:
+                try:
+                    response = s3_client.head_object(
+                        Bucket=S3_BUCKET_NAME, 
+                        Key=file_record["file_path"]
+                    )
+                    file_info.update({
+                        "file_exists": True,
+                        "file_size_bytes": response["ContentLength"],
+                        "last_modified": response["LastModified"].isoformat()
+                    })
+                except ClientError:
+                    # ファイルが存在しない場合はfile_exists=Falseのまま
+                    pass
+            
+            files_with_info.append(file_info)
+        
+        return {
+            "files": files_with_info,
+            "total_count": len(result.data),
+            "limit": limit,
+            "offset": offset
+        }
+        
+    except Exception as e:
+        raise HTTPException(
+            status_code=500,
+            detail=f"Failed to fetch audio files: {str(e)}"
+        )
+
+
+@app.get("/api/audio-files/presigned-url")
+async def get_presigned_url(
+    file_path: str,
+    expiration_hours: int = 1
+):
+    """
+    音声ファイルの署名付きURLを生成（ブラウザ再生・ダウンロード用）
+    
+    Args:
+        file_path: S3ファイルパス（例: files/device123/2025-08-25/09-00/audio.wav）
+        expiration_hours: URL有効期限（時間、最大24時間）
+    
+    Returns:
+        署名付きURLとメタデータ
+    """
+    if not s3_client:
+        raise HTTPException(
+            status_code=500,
+            detail="S3 client not configured"
+        )
+    
+    # 有効期限の制限
+    if expiration_hours > 24:
+        expiration_hours = 24
+    elif expiration_hours < 1:
+        expiration_hours = 1
+    
+    try:
+        # ファイル存在確認
+        s3_client.head_object(Bucket=S3_BUCKET_NAME, Key=file_path)
+        
+        # 署名付きURL生成
+        presigned_url = s3_client.generate_presigned_url(
+            'get_object',
+            Params={
+                'Bucket': S3_BUCKET_NAME,
+                'Key': file_path
+            },
+            ExpiresIn=expiration_hours * 3600
+        )
+        
+        return {
+            "presigned_url": presigned_url,
+            "file_path": file_path,
+            "expires_in_hours": expiration_hours,
+            "expires_at": (datetime.now(pytz.UTC) + 
+                         timedelta(hours=expiration_hours)).isoformat(),
+            "bucket": S3_BUCKET_NAME
+        }
+        
+    except ClientError as e:
+        if e.response['Error']['Code'] == 'NoSuchKey':
+            raise HTTPException(
+                status_code=404,
+                detail=f"Audio file not found: {file_path}"
+            )
+        else:
+            raise HTTPException(
+                status_code=500,
+                detail=f"Failed to generate presigned URL: {str(e)}"
+            )
+    except Exception as e:
+        raise HTTPException(
+            status_code=500,
+            detail=f"Error generating presigned URL: {str(e)}"
+        )
+
+
+@app.get("/api/devices")
+async def get_devices():
+    """
+    登録されているデバイス一覧を取得（API Manager用）
+    """
+    if not supabase_client:
+        raise HTTPException(
+            status_code=500,
+            detail="Supabase client not configured"
+        )
+    
+    try:
+        result = supabase_client.table("audio_files").select("device_id").execute()
+        
+        # デバイスIDの重複除去とソート
+        device_ids = list(set([row["device_id"] for row in result.data]))
+        device_ids.sort()
+        
+        return {
+            "devices": [{"device_id": device_id} for device_id in device_ids],
+            "total_count": len(device_ids)
+        }
+        
+    except Exception as e:
+        raise HTTPException(
+            status_code=500,
+            detail=f"Failed to fetch devices: {str(e)}"
+        )
+
+# =========================================
 # ルートエンドポイント
 # =========================================
 @app.get("/", response_class=HTMLResponse)
@@ -331,6 +528,21 @@ async def root():
         <div class="endpoint">
             <span class="method get">GET</span> <code>/status</code>
             <p>/healthのエイリアス。同じ情報を返します。</p>
+        </div>
+        
+        <div class="endpoint">
+            <span class="method get">GET</span> <code>/api/audio-files</code>
+            <p>音声ファイル一覧を取得します（API Manager用）。日付範囲やデバイスIDでフィルタリング可能。</p>
+        </div>
+        
+        <div class="endpoint">
+            <span class="method get">GET</span> <code>/api/audio-files/presigned-url</code>
+            <p>音声ファイルの署名付きURLを生成します。ブラウザで直接再生・ダウンロード可能。</p>
+        </div>
+        
+        <div class="endpoint">
+            <span class="method get">GET</span> <code>/api/devices</code>
+            <p>登録されているデバイス一覧を取得します。</p>
         </div>
         
         <h2>S3パス構造</h2>
