@@ -700,6 +700,12 @@ python verify_upload.py
 
 ## 更新履歴
 
+### 2025/8/29 - v2.4.1（watchme-networkインフラ管理体制への移行）
+- **Docker Compose設定更新**: `docker-compose.yml`と`docker-compose.prod.yml`を`external: true`設定に変更
+- **ネットワーク統一**: `vault-network`から`watchme-network`へ移行
+- **インフラ管理の一元化**: watchme-server-configsリポジトリでの統一管理体制に対応
+- **安定性向上**: 全マイクロサービス間の通信を統一ネットワークで実現
+
 ### 2025/8/25 - v2.4.0（API Manager統合機能追加）
 - **新エンドポイント追加**: API Manager統合用の3つのエンドポイントを追加
   - `GET /api/audio-files` - 音声ファイル一覧取得（フィルタリング・ページネーション対応）

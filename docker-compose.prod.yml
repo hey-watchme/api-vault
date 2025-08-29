@@ -26,7 +26,7 @@ services:
         max-size: "10m"
         max-file: "3"
     networks:
-      - vault-network
+      - watchme-network
     deploy:
       resources:
         limits:
@@ -37,5 +37,5 @@ services:
           memory: 512M
 
 networks:
-  vault-network:
-    driver: bridge
+  watchme-network:
+    external: true
