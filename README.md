@@ -700,6 +700,13 @@ python verify_upload.py
 
 ## 更新履歴
 
+### 2025/9/3 - v2.5.0（systemd管理対応・本番デプロイプロセス標準化）
+- **systemd管理への完全移行**: サーバー再起動時の自動起動を保証
+- **本番デプロイプロセスの標準化**: `docker-compose.prod.yml`の使用を徹底
+- **ヘルスチェック問題の解決**: Dockerfile.prodにcurlインストール済み
+- **ドキュメント大幅改訂**: DEPLOYMENT.mdを全面的に更新、標準手順を明確化
+- **watchme-server-configs連携強化**: systemdサービス設定の一元管理
+
 ### 2025/8/29 - v2.4.1（watchme-networkインフラ管理体制への移行）
 - **Docker Compose設定更新**: `docker-compose.yml`と`docker-compose.prod.yml`を`external: true`設定に変更
 - **ネットワーク統一**: `vault-network`から`watchme-network`へ移行
