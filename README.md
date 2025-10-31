@@ -6,6 +6,36 @@ WatchMeプロジェクトにおけるファイル管理のエントリーポイ�
 
 ---
 
+## ⚠️ 重要：環境変数管理の暫定対応（要改善）
+
+**現状の問題点:**
+
+現在、運用設定（`SKIP_ENABLED`, `SKIP_DEVICE_IDS`, `SKIP_HOURS`）をGitHub Secretsで管理していますが、これは**応急処置**です。
+
+**何が問題か:**
+- ❌ GitHub Secretsは恒久的な認証情報用（AWS Key、Supabase Keyなど）
+- ❌ 運用設定は日常業務で頻繁に変更する（デバイス追加、時間帯変更など）
+- ❌ 変更のたびにGitHub UI操作 → git push → CI/CD実行が必要（非効率）
+
+**本来あるべき姿:**
+
+| 種類 | 保管場所 | 変更方法 | 例 |
+|------|---------|---------|-----|
+| **認証情報** | GitHub Secrets → CI/CDで`.env`に自動配置 | ほぼ変更しない | `AWS_ACCESS_KEY_ID`, `SUPABASE_KEY`, `S3_BUCKET_NAME` |
+| **運用設定** | EC2上の`config.env`（手動編集可） | SSH接続して直接編集 → 即座に反映 | `SKIP_ENABLED`, `SKIP_DEVICE_IDS`, `SKIP_HOURS` |
+
+**TODO（優先度：高）:**
+1. EC2上に`config.env`を作成（運用設定専用）
+2. `docker-compose.prod.yml`で複数の環境ファイルを読み込むように修正
+3. CI/CDから運用設定の環境変数を削除
+4. 運用手順書を更新
+
+**現在の暫定運用:**
+- 運用設定もGitHub Secretsで管理（非推奨だが動作する）
+- 変更が必要な場合は、GitHub Secrets編集 → git push → 自動デプロイ
+
+---
+
 ## 🗺️ ルーティング詳細
 
 | 項目 | 値 | 説明 |
