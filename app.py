@@ -53,6 +53,11 @@ AWS_REGION = os.getenv("AWS_REGION", "us-east-1")
 SUPABASE_URL = os.getenv("SUPABASE_URL")
 SUPABASE_KEY = os.getenv("SUPABASE_KEY")
 
+# デバイススキップ設定
+SKIP_ENABLED = os.getenv('SKIP_ENABLED', 'false').lower() == 'true'
+SKIP_DEVICE_IDS = [device_id.strip() for device_id in os.getenv('SKIP_DEVICE_IDS', '').split(',') if device_id.strip()]
+SKIP_HOURS = [int(h.strip()) for h in os.getenv('SKIP_HOURS', '').split(',') if h.strip()]
+
 # S3クライアントの初期化
 s3_client = None
 if AWS_ACCESS_KEY_ID and AWS_SECRET_ACCESS_KEY:
@@ -67,6 +72,45 @@ if AWS_ACCESS_KEY_ID and AWS_SECRET_ACCESS_KEY:
 supabase_client: Optional[Client] = None
 if SUPABASE_URL and SUPABASE_KEY:
     supabase_client = create_client(SUPABASE_URL, SUPABASE_KEY)
+
+# =========================================
+# デバイススキップ機能
+# =========================================
+def determine_initial_status(device_id: str, time_block: str) -> str:
+    """
+    初期ステータスを決定（pending or skipped）
+
+    Args:
+        device_id: デバイスID
+        time_block: タイムブロック（HH-MM形式、例: 23-00）
+
+    Returns:
+        'pending' または 'skipped'
+    """
+    # スキップ機能が無効の場合は常にpending
+    if not SKIP_ENABLED:
+        return 'pending'
+
+    # 対象デバイスでない場合はpending
+    if device_id not in SKIP_DEVICE_IDS:
+        return 'pending'
+
+    # SKIP_HOURSが空の場合はスキップしない（直感的な動作）
+    if not SKIP_HOURS:
+        print(f"ℹ️ SKIP_HOURS is empty, not skipping: device_id={device_id}, time_block={time_block}")
+        return 'pending'
+
+    # 時間帯チェック
+    try:
+        hour = int(time_block.split('-')[0])
+        if hour in SKIP_HOURS:
+            print(f"⏭️ Skip: device_id={device_id}, time_block={time_block}, hour={hour}")
+            return 'skipped'
+    except (ValueError, IndexError) as e:
+        print(f"⚠️ Warning: Invalid time_block format: {time_block}, error: {e}")
+        return 'pending'
+
+    return 'pending'
 
 # =========================================
 # ヘルスチェックエンドポイント
@@ -230,7 +274,8 @@ async def upload_file(
             "recorded_at": recorded_at.isoformat(),  # タイムゾーン情報を含むISO8601形式（PKのため必須）
             "file_path": s3_key,
             "local_date": local_date,  # YYYY-MM-DD形式のローカル日付
-            "time_block": time_block    # HH-MM形式のタイムブロック（00-00, 00-30等）
+            "time_block": time_block,   # HH-MM形式のタイムブロック（00-00, 00-30等）
+            "transcriptions_status": determine_initial_status(device_id, time_block)  # スキップ判定
         }
         
         # Supabaseへの挿入
