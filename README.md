@@ -527,61 +527,82 @@ pip install -r requirements.txt
 uvicorn app:app --reload --host 0.0.0.0 --port 8000
 ```
 
-#### 本番環境（Docker - 推奨）
+#### 本番環境（Docker + CI/CD - 推奨）
 
-**本番環境ではDockerコンテナとして実行することを強く推奨します。**
+**本番環境ではGitHub Actionsによる自動CI/CDデプロイを使用します。**
 
-**必要なもの:**
-- Docker
-- Docker Compose
+### 🚀 CI/CDによる自動デプロイ（2025-10-31導入）
 
-**デプロイ手順:**
+**デプロイ方法:**
 ```bash
-# 1. サーバーに接続
+# ローカルでコードを修正してpushするだけで自動デプロイ
+git add .
+git commit -m "feat: Update Vault API"
+git push origin main
+
+# GitHub Actionsが自動的に:
+# 1. Dockerイメージをビルド
+# 2. ECRにプッシュ
+# 3. EC2にデプロイ
+# 4. ヘルスチェック実行
+```
+
+**GitHub Actionsの確認:**
+```
+https://github.com/hey-watchme/vault/actions
+```
+
+**詳細なセットアップ手順:**
+- [DEPLOY_INSTRUCTIONS.md](./DEPLOY_INSTRUCTIONS.md) - ユーザー向け実施手順
+- [CICD_SETUP.md](./CICD_SETUP.md) - 詳細なセットアップ手順
+
+### 📦 初回セットアップ（1回のみ）
+
+初回のみ、以下の手動セットアップが必要です：
+
+```bash
+# 1. EC2にSSH接続
 ssh -i ~/watchme-key.pem ubuntu@3.24.16.82
 
-# 2. 作業ディレクトリに移動
-cd /home/ubuntu/watchme-vault-api-docker
+# 2. ディレクトリ作成（べき等性保証）
+mkdir -p /home/ubuntu/watchme-vault-api
 
-# 3. 最新コードを取得（初回時）
-git clone [リポジトリURL] .
+# 3. Dockerネットワーク作成
+docker network create watchme-network 2>/dev/null || true
 
-# 4. 環境変数を設定（初回時）
-cp .env.example .env
-nano .env  # 環境変数を設定
+# 4. ログアウト
+exit
+```
 
-# 5. Dockerコンテナをビルド・起動
-docker-compose build --no-cache
-docker-compose up -d
+**GitHub Secretsの設定:**
+以下のSecretsをGitHubリポジトリに設定してください：
+- `AWS_ACCESS_KEY_ID`
+- `AWS_SECRET_ACCESS_KEY`
+- `EC2_HOST`
+- `EC2_SSH_PRIVATE_KEY`
+- `EC2_USER`
+- `SUPABASE_URL`
+- `SUPABASE_KEY`
+- `S3_BUCKET_NAME`
 
-# 6. ヘルスチェック
+### 🔧 運用コマンド
+
+```bash
+# EC2にSSH接続
+ssh -i ~/watchme-key.pem ubuntu@3.24.16.82
+
+# コンテナログ確認
+docker logs watchme-vault-api --tail 100
+
+# コンテナステータス確認
+docker ps | grep watchme-vault-api
+
+# ヘルスチェック
 curl http://localhost:8000/health
-```
 
-**更新手順:**
-```bash
-# 1. 最新コードを取得
-git pull origin main
-
-# 2. コンテナを再ビルド・再起動
-docker-compose down
-docker-compose build --no-cache
-docker-compose up -d
-```
-
-**運用コマンド:**
-```bash
-# ログ確認
-docker-compose logs -f vault-api
-
-# ステータス確認
-docker-compose ps
-
-# 再起動
-docker-compose restart vault-api
-
-# 停止
-docker-compose down
+# 手動再起動（緊急時のみ）
+cd /home/ubuntu/watchme-vault-api
+./run-prod.sh
 ```
 
 ## 📱 iOSアプリからの使用例
@@ -750,6 +771,15 @@ python verify_upload.py
 
 ## 更新履歴
 
+### 2025/10/31 - v3.0.0（CI/CD自動デプロイ導入）
+- **GitHub Actions CI/CD導入**: git pushだけで自動デプロイを実現
+- **ECR自動ビルド**: Dockerイメージの自動ビルド＆プッシュ
+- **EC2自動デプロイ**: 設定ファイル配布・環境変数更新・コンテナ再起動を完全自動化
+- **ヘルスチェック自動実行**: デプロイ後の動作確認を自動化
+- **ゼロダウンタイムデプロイ**: 既存コンテナの完全削除→新規コンテナ起動
+- **デプロイドキュメント整備**: DEPLOY_INSTRUCTIONS.md、CICD_SETUP.mdを追加
+- **手動デプロイからの完全移行**: 手動SSH作業を初回セットアップのみに限定
+
 ### 2025/9/3 - v2.5.0（systemd管理対応・本番デプロイプロセス標準化）
 - **systemd管理への完全移行**: サーバー再起動時の自動起動を保証
 - **本番デプロイプロセスの標準化**: `docker-compose.prod.yml`の使用を徹底
@@ -814,8 +844,8 @@ python verify_upload.py
 ## 開発者情報
 
 - 作成者: Kaya Matsumoto
-- 最終更新: 2025年8月25日
-- バージョン: 2.4.0（API Manager統合機能追加）
+- 最終更新: 2025年10月31日
+- バージョン: 3.0.0（CI/CD自動デプロイ導入）
 - リポジトリ: [プライベートリポジトリ]
 
 ## ライセンス
