@@ -4,6 +4,56 @@
 
 WatchMeプロジェクトにおけるファイル管理のエントリーポイントとなるAPIです。iOSデバイスから送信されたWAVファイルをAmazon S3に保存し、後続の処理API（transcriber, behavior, emotion）が処理できるようにSupabaseにメタデータを登録します。
 
+---
+
+## 🗺️ ルーティング詳細
+
+| 項目 | 値 | 説明 |
+|------|-----|------|
+| **🏷️ サービス名** | Vault API | 音声ファイルストレージ |
+| **📦 機能** | File Upload & Metadata | S3アップロード・メタデータ管理 |
+| | | |
+| **🌐 外部アクセス（Nginx）** | | |
+| └ 公開エンドポイント | `https://api.hey-watch.me/vault/` | Nginx経由の公開URL |
+| └ Nginx設定ファイル | `/etc/nginx/sites-available/api.hey-watch.me` | |
+| └ proxy_pass先 | `http://localhost:8000/` | 内部転送先 |
+| └ タイムアウト | 180秒 | read/connect/send |
+| | | |
+| **🔌 API内部エンドポイント** | | |
+| └ ヘルスチェック | `/health` | GET - 死活監視 |
+| └ ステータス | `/status` | GET - /healthのエイリアス |
+| └ **音声ファイルアップロード** | `/upload` | POST - iOSデバイスから呼ばれる |
+| └ **音声ファイル一覧** | `/api/audio-files` | GET - API Manager用 |
+| └ **署名付きURL生成** | `/api/audio-files/presigned-url` | GET - ブラウザ再生用 |
+| └ **デバイス一覧** | `/api/devices` | GET - API Manager用 |
+| | | |
+| **🐳 Docker/コンテナ** | | |
+| └ コンテナ名 | `watchme-vault-api` | |
+| └ ポート（内部） | 8000 | コンテナ内 |
+| └ ポート（公開） | `127.0.0.1:8000:8000` | ローカルホストのみ |
+| └ ヘルスチェック | `/health` | Docker healthcheck |
+| | | |
+| **☁️ AWS ECR** | | |
+| └ リポジトリ名 | `watchme-api-vault` | |
+| └ リージョン | ap-southeast-2 (Sydney) | |
+| └ URI | `754724220380.dkr.ecr.ap-southeast-2.amazonaws.com/watchme-api-vault:latest` | |
+| | | |
+| **📂 ディレクトリ** | | |
+| └ ソースコード | `/Users/kaya.matsumoto/projects/watchme/api/vault/watchme_api` | ローカル |
+| └ GitHubリポジトリ | `matsumotokaya/watchme-vault-api` | |
+| └ EC2配置場所 | `/home/ubuntu/watchme-vault-api-docker` | |
+| | | |
+| **🔗 呼び出し元** | | |
+| └ iOSアプリ | WatchMe iOS App | 手動録音・自動録音 |
+| └ Observerデバイス | ESP32/M5 CORE2 | 30分ごと自動録音 |
+| └ 呼び出しURL | `https://api.hey-watch.me/vault/upload` | |
+| | | |
+| **⚡ 後続処理** | | |
+| └ S3イベント通知 | → Lambda: audio-processor | S3へのPUT時に起動 |
+| └ SQSキュー | → Lambda: audio-worker | 音声処理パイプライン開始 |
+
+---
+
 ## 🎯 主な責務
 
 このAPIは以下の2つの機能に特化しています：
