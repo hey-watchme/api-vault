@@ -2,9 +2,7 @@ version: '3.8'
 
 services:
   vault-api:
-    build:
-      context: .
-      dockerfile: Dockerfile.prod
+    image: 754724220380.dkr.ecr.ap-southeast-2.amazonaws.com/watchme-api-vault:latest
     container_name: watchme-vault-api
     ports:
       - "127.0.0.1:8000:8000"  # localhostのみにバインド（Nginx経由でアクセス）
