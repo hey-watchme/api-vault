@@ -40,7 +40,7 @@ WatchMeプロジェクトにおけるファイル管理のエントリーポイ�
 | | | |
 | **📂 ディレクトリ** | | |
 | └ ソースコード | `/Users/kaya.matsumoto/projects/watchme/api/vault/watchme_api` | ローカル |
-| └ GitHubリポジトリ | `matsumotokaya/watchme-vault-api` | |
+| └ GitHubリポジトリ | `hey-watchme/api-vault` | ⚠️ ECRとは異なる名前 |
 | └ EC2配置場所 | `/home/ubuntu/watchme-vault-api-docker` | |
 | | | |
 | **🔗 呼び出し元** | | |
