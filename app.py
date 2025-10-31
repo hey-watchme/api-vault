@@ -298,18 +298,24 @@ async def upload_file(
                 response_data["supabase_id"] = result.data[0]["id"]
         
         return JSONResponse(response_data)
-        
+
     except ClientError as e:
         # S3エラー
+        error_message = f"S3 upload failed: {str(e)}"
+        print(f"❌ ERROR: {error_message}")  # 必ずログに出力
+        print(f"   Device: {device_id}, Recorded: {recorded_at_str}")
         raise HTTPException(
             status_code=500,
-            detail=f"S3 upload failed: {str(e)}"
+            detail=error_message
         )
     except Exception as e:
         # その他のエラー
+        error_message = f"Upload failed: {str(e)}"
+        print(f"❌ ERROR: {error_message}")  # 必ずログに出力
+        print(f"   Device: {device_id if 'device_id' in locals() else 'unknown'}")
         raise HTTPException(
             status_code=500,
-            detail=f"Upload failed: {str(e)}"
+            detail=error_message
         )
 
 # =========================================
