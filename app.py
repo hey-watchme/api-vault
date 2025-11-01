@@ -53,10 +53,23 @@ AWS_REGION = os.getenv("AWS_REGION", "us-east-1")
 SUPABASE_URL = os.getenv("SUPABASE_URL")
 SUPABASE_KEY = os.getenv("SUPABASE_KEY")
 
-# デバイススキップ設定
-SKIP_ENABLED = os.getenv('SKIP_ENABLED', 'false').lower() == 'true'
-SKIP_DEVICE_IDS = [device_id.strip() for device_id in os.getenv('SKIP_DEVICE_IDS', '').split(',') if device_id.strip()]
-SKIP_HOURS = [int(h.strip()) for h in os.getenv('SKIP_HOURS', '').split(',') if h.strip()]
+# =========================================
+# デバイススキップ設定（夜間停止機能）
+# =========================================
+# 注意: これらは運用設定なので、環境変数ではなくコード内で管理する
+# 必要に応じて直接このファイルを編集してください
+
+# スキップ機能を有効にするかどうか
+SKIP_ENABLED = True
+
+# スキップ対象のデバイスID（複数指定可能）
+SKIP_DEVICE_IDS = [
+    '9f7d6e27-98c3-4c19-bdfb-f7fda58b9a93'  # 特定のオブザーバーデバイス
+]
+
+# スキップする時間帯（0-23の整数で指定）
+# 例：23,0,1,2,3,4,5 = 夜23時から朝5時台まで
+SKIP_HOURS = [23, 0, 1, 2, 3, 4, 5]
 
 # S3クライアントの初期化
 s3_client = None
@@ -71,7 +84,12 @@ if AWS_ACCESS_KEY_ID and AWS_SECRET_ACCESS_KEY:
 # Supabaseクライアントの初期化
 supabase_client: Optional[Client] = None
 if SUPABASE_URL and SUPABASE_KEY:
-    supabase_client = create_client(SUPABASE_URL, SUPABASE_KEY)
+    try:
+        supabase_client = create_client(SUPABASE_URL, SUPABASE_KEY)
+    except Exception as e:
+        print(f"⚠️ Supabase client initialization failed: {e}")
+        # テスト環境などでは継続可能にする
+        supabase_client = None
 
 # =========================================
 # デバイススキップ機能
@@ -87,30 +105,41 @@ def determine_initial_status(device_id: str, time_block: str) -> str:
     Returns:
         'pending' または 'skipped'
     """
+    # デバッグ情報を出力
+    print(f"📊 SKIP判定開始: device_id={device_id}, time_block={time_block}")
+    print(f"   SKIP_ENABLED={SKIP_ENABLED}")
+    print(f"   SKIP_DEVICE_IDS={SKIP_DEVICE_IDS}")
+    print(f"   SKIP_HOURS={SKIP_HOURS}")
+
     # スキップ機能が無効の場合は常にpending
     if not SKIP_ENABLED:
+        print(f"   → スキップ機能が無効のため pending を返す")
         return 'pending'
 
     # 対象デバイスでない場合はpending
     if device_id not in SKIP_DEVICE_IDS:
+        print(f"   → デバイス {device_id} はスキップ対象外のため pending を返す")
         return 'pending'
 
     # SKIP_HOURSが空の場合はスキップしない（直感的な動作）
     if not SKIP_HOURS:
-        print(f"ℹ️ SKIP_HOURS is empty, not skipping: device_id={device_id}, time_block={time_block}")
+        print(f"   → SKIP_HOURS が空のため pending を返す")
         return 'pending'
 
     # 時間帯チェック
     try:
         hour = int(time_block.split('-')[0])
         if hour in SKIP_HOURS:
-            print(f"⏭️ Skip: device_id={device_id}, time_block={time_block}, hour={hour}")
+            print(f"   ✅ スキップ対象: hour={hour} は SKIP_HOURS に含まれる")
+            print(f"   → 'skipped' を返す")
             return 'skipped'
+        else:
+            print(f"   → hour={hour} はスキップ時間外のため pending を返す")
+            return 'pending'
     except (ValueError, IndexError) as e:
-        print(f"⚠️ Warning: Invalid time_block format: {time_block}, error: {e}")
+        print(f"   ⚠️ time_block のパースエラー: {time_block}, error: {e}")
+        print(f"   → pending を返す")
         return 'pending'
-
-    return 'pending'
 
 # =========================================
 # ヘルスチェックエンドポイント

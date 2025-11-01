@@ -148,9 +148,6 @@ jobs:
         AWS_REGION: ap-southeast-2
         SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
         SUPABASE_KEY: ${{ secrets.SUPABASE_KEY }}
-        SKIP_ENABLED: ${{ secrets.SKIP_ENABLED }}
-        SKIP_DEVICE_IDS: ${{ secrets.SKIP_DEVICE_IDS }}
-        SKIP_HOURS: ${{ secrets.SKIP_HOURS }}
       run: |
         echo "📝 Creating/Updating .env file on EC2..."
 
@@ -164,9 +161,6 @@ jobs:
           echo "AWS_REGION=${AWS_REGION}" >> .env
           echo "SUPABASE_URL=${SUPABASE_URL}" >> .env
           echo "SUPABASE_KEY=${SUPABASE_KEY}" >> .env
-          echo "SKIP_ENABLED=${SKIP_ENABLED}" >> .env
-          echo "SKIP_DEVICE_IDS=${SKIP_DEVICE_IDS}" >> .env
-          echo "SKIP_HOURS=${SKIP_HOURS}" >> .env
         ENDSSH
 
         # 作成確認

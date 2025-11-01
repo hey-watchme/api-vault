@@ -14,10 +14,7 @@ services:
       - AWS_REGION=${AWS_REGION}
       - SUPABASE_URL=${SUPABASE_URL}
       - SUPABASE_KEY=${SUPABASE_KEY}
-      # デバイススキップ設定
-      - SKIP_ENABLED=${SKIP_ENABLED}
-      - SKIP_DEVICE_IDS=${SKIP_DEVICE_IDS}
-      - SKIP_HOURS=${SKIP_HOURS}
+      # デバイススキップ設定は環境変数ではなく、app.py内で直接管理します
     volumes:
       # ログディレクトリをマウント
       - /var/log/watchme-vault-api:/app/logs
