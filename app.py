@@ -286,12 +286,10 @@ async def upload_file(
         # recorded_atは既にmetadataから取得済み
         
         # Register metadata to Supabase audio_files table
-        # recorded_at: Primary key (with timezone info)
-        # local_datetime: Same as recorded_at (for downstream processing)
+        # recorded_at: Primary key (UTC timestamp)
         audio_file_data = {
             "device_id": device_id,
             "recorded_at": recorded_at.isoformat(),
-            "local_datetime": recorded_at.isoformat(),
             "file_path": s3_key,
             "transcriptions_status": determine_initial_status(device_id, recorded_at)
         }
