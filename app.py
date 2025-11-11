@@ -94,51 +94,48 @@ if SUPABASE_URL and SUPABASE_KEY:
 # =========================================
 # デバイススキップ機能
 # =========================================
-def determine_initial_status(device_id: str, time_block: str) -> str:
+def determine_initial_status(device_id: str, recorded_at) -> str:
     """
-    初期ステータスを決定（pending or skipped）
+    Determine initial processing status (pending or skipped)
 
     Args:
-        device_id: デバイスID
-        time_block: タイムブロック（HH-MM形式、例: 23-00）
+        device_id: Device ID
+        recorded_at: datetime object with timezone info
 
     Returns:
-        'pending' または 'skipped'
+        'pending' or 'skipped'
     """
-    # デバッグ情報を出力
-    print(f"📊 SKIP判定開始: device_id={device_id}, time_block={time_block}")
+    # Extract hour from recorded_at
+    hour = recorded_at.hour
+
+    # Debug output
+    print(f"📊 SKIP check: device_id={device_id}, hour={hour}")
     print(f"   SKIP_ENABLED={SKIP_ENABLED}")
     print(f"   SKIP_DEVICE_IDS={SKIP_DEVICE_IDS}")
     print(f"   SKIP_HOURS={SKIP_HOURS}")
 
-    # スキップ機能が無効の場合は常にpending
+    # If skip feature is disabled, always return pending
     if not SKIP_ENABLED:
-        print(f"   → スキップ機能が無効のため pending を返す")
+        print(f"   → Skip feature disabled, returning pending")
         return 'pending'
 
-    # 対象デバイスでない場合はpending
+    # If device is not in skip list, return pending
     if device_id not in SKIP_DEVICE_IDS:
-        print(f"   → デバイス {device_id} はスキップ対象外のため pending を返す")
+        print(f"   → Device {device_id} not in skip list, returning pending")
         return 'pending'
 
-    # SKIP_HOURSが空の場合はスキップしない（直感的な動作）
+    # If SKIP_HOURS is empty, do not skip
     if not SKIP_HOURS:
-        print(f"   → SKIP_HOURS が空のため pending を返す")
+        print(f"   → SKIP_HOURS is empty, returning pending")
         return 'pending'
 
-    # 時間帯チェック
-    try:
-        hour = int(time_block.split('-')[0])
-        if hour in SKIP_HOURS:
-            print(f"   ✅ スキップ対象: hour={hour} は SKIP_HOURS に含まれる")
-            print(f"   → 'skipped' を返す")
-            return 'skipped'
-        else:
-            print(f"   → hour={hour} はスキップ時間外のため pending を返す")
-            return 'pending'
-    except (ValueError, IndexError) as e:
-        print(f"   ⚠️ time_block のパースエラー: {time_block}, error: {e}")
-        print(f"   → pending を返す")
+    # Check if hour is in skip hours
+    if hour in SKIP_HOURS:
+        print(f"   ✅ Skip target: hour={hour} is in SKIP_HOURS")
+        print(f"   → Returning 'skipped'")
+        return 'skipped'
+    else:
+        print(f"   → hour={hour} is not in skip hours, returning pending")
         return 'pending'
 
 # =========================================
@@ -241,33 +238,27 @@ async def upload_file(
             detail=f"Invalid recorded_at format. Expected ISO 8601: {str(e)}"
         )
     
-    # recorded_atから日付と時刻ブロックを抽出
-    # 重要: ユーザーのローカル時間のまま処理する（タイムゾーン変換なし）
-    # S3のパス生成では、クライアントから送られてきたタイムスタンプが持つ
-    # ローカルの時刻情報をそのまま使用します
-    # 例: "2025-07-19T14:15:00+09:00" → パスは "14-00" (UTCの05-00ではない)
-    
-    # タイムゾーン変換を行わず、recorded_atオブジェクトの時刻をそのまま使用
+    # S3 path generation using local time (no timezone conversion)
+    # Example: "2025-07-19T14:15:00+09:00" -> path uses "14-00" (not UTC 05-00)
+
+    # Extract date and time components from recorded_at (local time preserved)
     year = recorded_at.year
     month = recorded_at.month
     day = recorded_at.day
-    hour = recorded_at.hour    # ユーザーのローカル時間の「時」
-    minute = recorded_at.minute  # ユーザーのローカル時間の「分」
-    
-    # パス用の日付文字列
+    hour = recorded_at.hour
+    minute = recorded_at.minute
+
+    # Generate date string for S3 path
     date = f"{year:04d}-{month:02d}-{day:02d}"
-    
-    # 時刻を30分スロットに変換（00-00, 00-30, 01-00, ... 23-30）
-    # 例: 14:15 → 14-00, 14:45 → 14-30
+
+    # Convert time to 30-minute slot (00-00, 00-30, 01-00, ... 23-30)
+    # Example: 14:15 -> 14-00, 14:45 -> 14-30
     slot_minute = 0 if minute < 30 else 30
     time_block = f"{hour:02d}-{slot_minute:02d}"
-    
-    # local_dateオブジェクトの作成（YYYY-MM-DD形式）
-    local_date = date  # この値をデータベースのlocal_dateカラムに保存
-    
-    print(f"📊 S3パス生成（ユーザーのローカル時間をそのまま使用）:")
-    print(f"   入力: {recorded_at_str}")
-    print(f"   日付: {date}, 時刻スロット: {time_block}")
+
+    print(f"📊 S3 path generation (using local time):")
+    print(f"   Input: {recorded_at_str}")
+    print(f"   Date: {date}, Time slot: {time_block}")
     
     # 新しいS3パス構造の構築
     # files/{device_id}/{YYYY-MM-DD}/{HH-MM}/audio.wav
@@ -294,17 +285,15 @@ async def upload_file(
         
         # recorded_atは既にmetadataから取得済み
         
-        # Supabaseにメタデータを登録
-        # 基本的なカラムのみで登録（既存のテーブル構造に合わせる）
-        # 重要: recorded_atはユーザーのローカル時間をそのまま保存
-        # 注: recorded_atはPKの一部なので、削除予定でも現在は必須
+        # Register metadata to Supabase audio_files table
+        # recorded_at: Primary key (with timezone info)
+        # local_datetime: Same as recorded_at (for downstream processing)
         audio_file_data = {
             "device_id": device_id,
-            "recorded_at": recorded_at.isoformat(),  # タイムゾーン情報を含むISO8601形式（PKのため必須）
+            "recorded_at": recorded_at.isoformat(),
+            "local_datetime": recorded_at.isoformat(),
             "file_path": s3_key,
-            "local_date": local_date,  # YYYY-MM-DD形式のローカル日付
-            "time_block": time_block,   # HH-MM形式のタイムブロック（00-00, 00-30等）
-            "transcriptions_status": determine_initial_status(device_id, time_block)  # スキップ判定
+            "transcriptions_status": determine_initial_status(device_id, recorded_at)
         }
         
         # Supabaseへの挿入
