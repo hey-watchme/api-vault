@@ -238,31 +238,31 @@ async def upload_file(
             detail=f"Invalid recorded_at format. Expected ISO 8601: {str(e)}"
         )
     
-    # S3 path generation using local time (no timezone conversion)
-    # Example: "2025-07-19T14:15:00+09:00" -> path uses "14-00" (not UTC 05-00)
+    # S3 path generation using UTC timestamp
+    # Example: "2025-11-11T14:15:32+00:00" -> "files/.../2025-11-11/14-15-32/audio.wav"
 
-    # Extract date and time components from recorded_at (local time preserved)
+    # Extract date and time components from recorded_at (UTC)
     year = recorded_at.year
     month = recorded_at.month
     day = recorded_at.day
     hour = recorded_at.hour
     minute = recorded_at.minute
+    second = recorded_at.second
 
     # Generate date string for S3 path
     date = f"{year:04d}-{month:02d}-{day:02d}"
 
-    # Convert time to 30-minute slot (00-00, 00-30, 01-00, ... 23-30)
-    # Example: 14:15 -> 14-00, 14:45 -> 14-30
-    slot_minute = 0 if minute < 30 else 30
-    time_block = f"{hour:02d}-{slot_minute:02d}"
+    # Generate time string with seconds (HH-MM-SS)
+    # Example: 14:15:32 -> "14-15-32"
+    time_str = f"{hour:02d}-{minute:02d}-{second:02d}"
 
-    print(f"📊 S3 path generation (using local time):")
+    print(f"📊 S3 path generation (UTC timestamp):")
     print(f"   Input: {recorded_at_str}")
-    print(f"   Date: {date}, Time slot: {time_block}")
-    
-    # 新しいS3パス構造の構築
-    # files/{device_id}/{YYYY-MM-DD}/{HH-MM}/audio.wav
-    s3_key = f"files/{device_id}/{date}/{time_block}/audio.wav"
+    print(f"   Date: {date}, Time: {time_str}")
+
+    # New S3 path structure with second-level precision
+    # files/{device_id}/{YYYY-MM-DD}/{HH-MM-SS}/audio.wav
+    s3_key = f"files/{device_id}/{date}/{time_str}/audio.wav"
     
     try:
         # ファイルサイズ制限チェック（100MB）
