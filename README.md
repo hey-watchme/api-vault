@@ -451,28 +451,38 @@ audio.play();
 
 ### Supabaseテーブル構造（audio_files）
 
+**⚠️ 重要な変更（2025-11-11）**: タイムブロック方式から個別タイムスタンプ方式に移行
+
 **現在の実装で使用しているカラム:**
 | カラム名 | 型 | 説明 | 制約 |
 |---------|-----|------|------|
 | device_id | TEXT | デバイスID | NOT NULL, PRIMARY KEY の一部 |
-| recorded_at | TIMESTAMPTZ | 録音開始時刻（ユーザーのローカル時間） | NOT NULL, PRIMARY KEY の一部 |
+| recorded_at | TIMESTAMPTZ | 録音時刻（UTC、タイムゾーン情報付き） | NOT NULL, PRIMARY KEY の一部 |
+| local_datetime | TIMESTAMPTZ | 録音時刻（ローカルタイム、タイムゾーン情報付き） | NOT NULL |
 | file_path | TEXT | S3のファイルパス | NOT NULL |
-| local_date | DATE | ローカル日付（YYYY-MM-DD形式） | NULL |
-| time_block | VARCHAR(5) | タイムブロック（HH-MM形式、30分単位） | NULL |
 | transcriptions_status | TEXT | 文字起こし処理状態 | NOT NULL DEFAULT 'pending' |
 | behavior_features_status | TEXT | 行動分析処理状態 | NOT NULL DEFAULT 'pending' |
 | emotion_features_status | TEXT | 感情分析処理状態 | NOT NULL DEFAULT 'pending' |
 | created_at | TIMESTAMPTZ | レコード作成日時 | DEFAULT now() |
 
+**削除されたカラム（2025-11-11）:**
+- ~~`local_date`~~ → `local_datetime` に統合
+- ~~`time_block`~~ → `local_datetime` に統合
+
 **インデックス:**
 - PRIMARY KEY: `(device_id, recorded_at)`
-- `idx_audio_files_device_date`: `(device_id, local_date)` - デバイスと日付での検索高速化
-- `idx_audio_files_device_date_block`: `(device_id, local_date, time_block)` - デバイス、日付、時間帯での検索高速化
+
+**移行の理由:**
+- **旧方式の問題**: 30分以内に複数回録音すると、最新のデータで上書きされてしまう
+- **新方式の利点**: 各録音が個別のタイムスタンプで保存され、全てのデータが保持される
+- **データ構造**: `local_datetime` フィールドにタイムゾーン情報を含む完全なタイムスタンプを保存
+  - 例: `2025-11-11T18:01:01+09:00` (日本時間)
+  - 下流処理（Features API、Aggregator API）は `local_datetime` を参照するだけでOK
 
 **注意事項:**
-- 同じデバイスで同じ時刻のデータは重複不可（PRIMARY KEY制約）
-- `local_date`と`time_block`は`file_path`から構造化された情報として保存
-- `recorded_at`は将来的に削除予定ですが、現在はPRIMARY KEYの一部として必須
+- 同じデバイスで同じ `recorded_at` のデータは重複不可（PRIMARY KEY制約）
+- `local_datetime` と `recorded_at` は通常同じ値（後方互換性のため両方保持）
+- S3パスは30分単位のタイムブロック構造を維持（後方互換性）
 
 ## 🚀 セットアップ
 
@@ -526,24 +536,51 @@ SUPABASE_KEY=your_anon_key
 CREATE TABLE public.audio_files (
   device_id TEXT NOT NULL,
   recorded_at TIMESTAMPTZ NOT NULL,
+  local_datetime TIMESTAMPTZ NOT NULL,
   file_path TEXT NOT NULL,
   transcriptions_status TEXT NOT NULL DEFAULT 'pending'::text,
   behavior_features_status TEXT NOT NULL DEFAULT 'pending'::text,
   emotion_features_status TEXT NOT NULL DEFAULT 'pending'::text,
   created_at TIMESTAMPTZ NULL DEFAULT now(),
-  local_date DATE NULL,
-  time_block VARCHAR(5) NULL,
   CONSTRAINT audio_files_pkey PRIMARY KEY (device_id, recorded_at)
 ) TABLESPACE pg_default;
 
--- インデックスの作成（パフォーマンス向上）
-CREATE INDEX IF NOT EXISTS idx_audio_files_device_date 
-  ON public.audio_files USING btree (device_id, local_date) 
+-- Optional index for local_datetime queries
+CREATE INDEX IF NOT EXISTS idx_audio_files_local_datetime
+  ON public.audio_files USING btree (device_id, local_datetime DESC)
   TABLESPACE pg_default;
+```
 
-CREATE INDEX IF NOT EXISTS idx_audio_files_device_date_block 
-  ON public.audio_files USING btree (device_id, local_date, time_block) 
-  TABLESPACE pg_default;
+**既存テーブルの移行（2025-11-11）:**
+
+既存の `audio_files` テーブルがある場合は、以下のマイグレーションを実行：
+
+```sql
+-- Step 1: Add local_datetime column
+ALTER TABLE audio_files
+ADD COLUMN local_datetime TIMESTAMP WITH TIME ZONE;
+
+-- Step 2: Migrate existing data (copy recorded_at to local_datetime)
+UPDATE audio_files
+SET local_datetime = recorded_at
+WHERE local_datetime IS NULL;
+
+-- Step 3: Make local_datetime NOT NULL
+ALTER TABLE audio_files
+ALTER COLUMN local_datetime SET NOT NULL;
+
+-- Step 4: Drop old columns
+ALTER TABLE audio_files
+DROP COLUMN local_date,
+DROP COLUMN time_block;
+
+-- Step 5: Drop old indexes
+DROP INDEX IF EXISTS idx_audio_files_device_date;
+DROP INDEX IF EXISTS idx_audio_files_device_date_block;
+
+-- Step 6: Create new index
+CREATE INDEX IF NOT EXISTS idx_audio_files_local_datetime
+  ON public.audio_files USING btree (device_id, local_datetime DESC);
 ```
 
 ### インストールと起動
@@ -702,13 +739,18 @@ graph LR
     A[iOSデバイス] -->|WAVファイル + metadata JSON| B[Vault API]
     B -->|1. metadata検証| C{検証OK?}
     C -->|No| D[エラーレスポンス]
-    C -->|Yes| E[タイムスロット計算]
+    C -->|Yes| E[タイムスロット計算<br/>S3パス用のみ]
     E -->|ローカル時間 → S3パス| F[S3アップロード]
     F -->|files/device/date/timeslot/audio.wav| G[S3バケット]
     F -->|メタデータ保存| H[Supabase]
-    H -->|device_id, recorded_at, file_path| I[audio_files テーブル]
+    H -->|device_id, recorded_at<br/>local_datetime, file_path| I[audio_files テーブル]
     B -->|成功レスポンス + timezone_info| A
 ```
+
+**⚠️ 重要な変更（2025-11-11）:**
+- タイムスロット（30分単位）は**S3パス生成のみ**に使用
+- データベースには `local_datetime`（個別タイムスタンプ）を保存
+- 下流処理（Features API、Aggregator API）は `local_datetime` を使用
 
 ## 🔧 開発・デバッグ
 
