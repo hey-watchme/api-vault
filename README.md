@@ -146,9 +146,9 @@ WAVファイルをS3にアップロードし、Supabaseにメタデータを登�
 ```json
 {
   "status": "ok",
-  "s3_key": "files/device123/2025-07-19/13-30/audio.wav",
+  "s3_key": "files/device123/2025-07-19/13-30-15/audio.wav",
   "device_id": "device123",
-  "recorded_at": "2025-07-19T13:30:00.123+09:00",
+  "recorded_at": "2025-07-19T13:30:15.123+09:00",
   "file_size_bytes": 2458624,
   "method": "s3_upload",
   "timezone_info": "+0900"
@@ -222,9 +222,7 @@ APIの死活監視とS3/Supabase接続状態を確認します。
     {
       "device_id": "9f7d6e27-98c3-4c19-bdfb-f7fda58b9a93",
       "recorded_at": "2025-08-25T02:01:01.408+00:00",
-      "file_path": "files/9f7d6e27-98c3-4c19-bdfb-f7fda58b9a93/2025-08-25/11-00/audio.wav",
-      "local_date": "2025-08-25",
-      "time_block": "11-00",
+      "file_path": "files/9f7d6e27-98c3-4c19-bdfb-f7fda58b9a93/2025-08-25/02-01-01/audio.wav",
       "transcriptions_status": "completed",
       "behavior_features_status": "completed",
       "emotion_features_status": "completed",
@@ -247,14 +245,14 @@ APIの死活監視とS3/Supabase接続状態を確認します。
 **用途**: API Manager画面で音声ファイルをブラウザ上で直接再生・ダウンロードする
 
 **クエリパラメータ:**
-- `file_path` (required): S3ファイルパス（例：`files/device123/2025-08-25/11-00/audio.wav`）
+- `file_path` (required): S3ファイルパス（例：`files/device123/2025-08-25/11-30-45/audio.wav`）
 - `expiration_hours` (optional): URL有効期限（時間、デフォルト：1、最大：24）
 
 **レスポンス例:**
 ```json
 {
-  "presigned_url": "https://watchme-vault.s3.ap-southeast-2.amazonaws.com/files/device123/2025-08-25/11-00/audio.wav?AWSAccessKeyId=AKIA...&Signature=...&Expires=1756094854",
-  "file_path": "files/device123/2025-08-25/11-00/audio.wav",
+  "presigned_url": "https://watchme-vault.s3.ap-southeast-2.amazonaws.com/files/device123/2025-08-25/11-30-45/audio.wav?AWSAccessKeyId=AKIA...&Signature=...&Expires=1756094854",
+  "file_path": "files/device123/2025-08-25/11-30-45/audio.wav",
   "expires_in_hours": 1,
   "expires_at": "2025-08-25T04:07:34.387860+00:00",
   "bucket": "watchme-vault"
@@ -265,7 +263,7 @@ APIの死活監視とS3/Supabase接続状態を確認します。
 ```json
 // ファイルが存在しない場合
 {
-  "detail": "Audio file not found: files/device123/2025-08-25/11-00/audio.wav"
+  "detail": "Audio file not found: files/device123/2025-08-25/11-30-45/audio.wav"
 }
 ```
 
@@ -298,26 +296,28 @@ APIの死活監視とS3/Supabase接続状態を確認します。
 S3パスは、metadata JSON内の`recorded_at`フィールドから自動生成されます：
 
 ```
-metadata.recorded_at: "2025-07-19T13:30:00.123+09:00"
-     ↓ タイムゾーン変換なし（ユーザーのローカル時間を使用）
-     ↓ 日付: 2025-07-19, 時刻: 13:30 → スロット: 13-30
+metadata.recorded_at: "2025-07-19T13:30:15.123+09:00"
+     ↓ UTC変換（データベース保存用）
+     ↓ 日付: 2025-07-19, 時刻: 13:30:15 → HH-MM-SS: 13-30-15
      ↓
-S3保存パス: files/device123/2025-07-19/13-30/audio.wav
+S3保存パス: files/device123/2025-07-19/13-30-15/audio.wav
 ```
 
-#### タイムスロットの計算ルール
-ユーザーのローカル時間の時・分から30分スロットを計算：
-- `13:15` → `13-00` (13:00-13:29の枠)
-- `13:30` → `13-30` (13:30-13:59の枠)  
-- `13:45` → `13-30` (13:30-13:59の枠)
+#### タイムスタンプの計算ルール
+UTCタイムスタンプから秒単位の精度でパスを生成：
+- `13:15:32` → `13-15-32`
+- `13:30:00` → `13-30-00`
+- `13:45:59` → `13-45-59`
 
 #### S3保存パス形式
 ```
-files/{device_id}/{YYYY-MM-DD}/{HH-MM}/audio.wav
+files/{device_id}/{YYYY-MM-DD}/{HH-MM-SS}/audio.wav
 ```
-例: `files/device123/2025-07-19/13-30/audio.wav`
+例: `files/device123/2025-07-19/13-30-15/audio.wav`
 
-**重要**: パス内の時刻（例：`13-30`）は、ユーザーがその時刻に録音したローカル時間を表します。
+**重要（2025-11-11更新）**:
+- パス内の時刻は秒単位の精度で生成されます
+- 30分タイムブロック方式は廃止されました（複数録音の上書き問題を解決）
 
 ### S3ファイルへのアクセス方法
 
@@ -329,7 +329,7 @@ https://[バケット名].s3.[リージョン].amazonaws.com/[キー]
 
 実際の例：
 ```
-https://watchme-vault.s3.us-east-1.amazonaws.com/files/test_device_001/2025-07-18/14-30/audio.wav
+https://watchme-vault.s3.us-east-1.amazonaws.com/files/test_device_001/2025-07-18/14-30-15/audio.wav
 ```
 
 #### ⚠️ 重要：ブラウザからの直接アクセスについて
@@ -347,11 +347,11 @@ https://watchme-vault.s3.us-east-1.amazonaws.com/files/test_device_001/2025-07-1
 def generate_presigned_url(s3_key, expiration_hours=1):
     """
     S3オブジェクトの署名付きURLを生成
-    
+
     Args:
-        s3_key: S3のキー（例: files/device123/2025-07-18/14-30/audio.wav）
+        s3_key: S3のキー（例: files/device123/2025-07-18/14-30-15/audio.wav）
         expiration_hours: URLの有効期限（時間）
-    
+
     Returns:
         署名付きURL（ブラウザで直接アクセス可能）
     """
@@ -368,7 +368,7 @@ def generate_presigned_url(s3_key, expiration_hours=1):
 
 **生成されるURL例:**
 ```
-https://watchme-vault.s3.amazonaws.com/files/test_device_001/2025-07-18/14-30/audio.wav?AWSAccessKeyId=AKIA...&Signature=jMtT...&Expires=1752804858
+https://watchme-vault.s3.amazonaws.com/files/test_device_001/2025-07-18/14-30-15/audio.wav?AWSAccessKeyId=AKIA...&Signature=jMtT...&Expires=1752804858
 ```
 
 このURLは指定時間（例：1時間）だけ有効で、ブラウザに貼り付けると音声ファイルを再生・ダウンロードできます。
@@ -398,22 +398,20 @@ s3_client.download_file(S3_BUCKET_NAME, s3_key, 'local_audio.wav')
 # FastAPIエンドポイントの例
 @app.get("/api/audio/presigned-url")
 async def get_audio_presigned_url(
-    device_id: str = Query(...),
-    date: str = Query(...),
-    time_slot: str = Query(...),
+    file_path: str = Query(...),
     expiration_hours: int = Query(default=1, le=24)
 ):
     """
     音声ファイルの署名付きURLを生成
-    
+
     Returns:
         {
             "presigned_url": "https://...",
             "expires_in": "1時間",
-            "s3_key": "files/device123/2025-07-18/14-30/audio.wav"
+            "s3_key": "files/device123/2025-07-18/14-30-15/audio.wav"
         }
     """
-    s3_key = f"files/{device_id}/{date}/{time_slot}/audio.wav"
+    s3_key = file_path
     
     # ファイルの存在確認
     try:
@@ -438,7 +436,7 @@ async def get_audio_presigned_url(
 **フロントエンドでの使用例（React）:**
 ```javascript
 // 署名付きURLを取得
-const response = await fetch(`/api/audio/presigned-url?device_id=${deviceId}&date=${date}&time_slot=${timeSlot}`);
+const response = await fetch(`/api/audio/presigned-url?file_path=${encodeURIComponent(filePath)}`);
 const data = await response.json();
 
 // HTML5 Audioで再生
@@ -457,32 +455,32 @@ audio.play();
 | カラム名 | 型 | 説明 | 制約 |
 |---------|-----|------|------|
 | device_id | TEXT | デバイスID | NOT NULL, PRIMARY KEY の一部 |
-| recorded_at | TIMESTAMPTZ | 録音時刻（UTC、タイムゾーン情報付き） | NOT NULL, PRIMARY KEY の一部 |
-| local_datetime | TIMESTAMPTZ | 録音時刻（ローカルタイム、タイムゾーン情報付き） | NOT NULL |
-| file_path | TEXT | S3のファイルパス | NOT NULL |
+| recorded_at | TIMESTAMPTZ | 録音時刻（UTC） | NOT NULL, PRIMARY KEY の一部 |
+| file_path | TEXT | S3のファイルパス（秒単位精度） | NOT NULL |
 | transcriptions_status | TEXT | 文字起こし処理状態 | NOT NULL DEFAULT 'pending' |
 | behavior_features_status | TEXT | 行動分析処理状態 | NOT NULL DEFAULT 'pending' |
 | emotion_features_status | TEXT | 感情分析処理状態 | NOT NULL DEFAULT 'pending' |
 | created_at | TIMESTAMPTZ | レコード作成日時 | DEFAULT now() |
 
 **削除されたカラム（2025-11-11）:**
-- ~~`local_date`~~ → `local_datetime` に統合
-- ~~`time_block`~~ → `local_datetime` に統合
+- ~~`local_date`~~ - 削除
+- ~~`time_block`~~ - 削除
+- ~~`local_datetime`~~ - UTC統一アーキテクチャへの移行により削除
 
 **インデックス:**
 - PRIMARY KEY: `(device_id, recorded_at)`
 
 **移行の理由:**
-- **旧方式の問題**: 30分以内に複数回録音すると、最新のデータで上書きされてしまう
-- **新方式の利点**: 各録音が個別のタイムスタンプで保存され、全てのデータが保持される
-- **データ構造**: `local_datetime` フィールドにタイムゾーン情報を含む完全なタイムスタンプを保存
-  - 例: `2025-11-11T18:01:01+09:00` (日本時間)
-  - 下流処理（Features API、Aggregator API）は `local_datetime` を参照するだけでOK
+- **旧方式の問題**: 30分タイムブロック方式では、30分以内に複数回録音すると上書きされてしまう
+- **新方式の利点**:
+  - 各録音が個別のタイムスタンプ（秒単位精度）で保存され、全てのデータが保持される
+  - S3パス: `files/{device_id}/{YYYY-MM-DD}/{HH-MM-SS}/audio.wav`
+  - データベース: `(device_id, recorded_at)` の組み合わせで一意性を保証
 
 **注意事項:**
 - 同じデバイスで同じ `recorded_at` のデータは重複不可（PRIMARY KEY制約）
-- `local_datetime` と `recorded_at` は通常同じ値（後方互換性のため両方保持）
-- S3パスは30分単位のタイムブロック構造を維持（後方互換性）
+- S3ファイルパスは秒単位の精度で生成される（`14-30-15` など）
+- 下流処理（Features API、Aggregator API）は `recorded_at` を使用してデータを処理
 
 ## 🚀 セットアップ
 
@@ -536,7 +534,6 @@ SUPABASE_KEY=your_anon_key
 CREATE TABLE public.audio_files (
   device_id TEXT NOT NULL,
   recorded_at TIMESTAMPTZ NOT NULL,
-  local_datetime TIMESTAMPTZ NOT NULL,
   file_path TEXT NOT NULL,
   transcriptions_status TEXT NOT NULL DEFAULT 'pending'::text,
   behavior_features_status TEXT NOT NULL DEFAULT 'pending'::text,
@@ -544,11 +541,6 @@ CREATE TABLE public.audio_files (
   created_at TIMESTAMPTZ NULL DEFAULT now(),
   CONSTRAINT audio_files_pkey PRIMARY KEY (device_id, recorded_at)
 ) TABLESPACE pg_default;
-
--- Optional index for local_datetime queries
-CREATE INDEX IF NOT EXISTS idx_audio_files_local_datetime
-  ON public.audio_files USING btree (device_id, local_datetime DESC)
-  TABLESPACE pg_default;
 ```
 
 **既存テーブルの移行（2025-11-11）:**
@@ -556,31 +548,16 @@ CREATE INDEX IF NOT EXISTS idx_audio_files_local_datetime
 既存の `audio_files` テーブルがある場合は、以下のマイグレーションを実行：
 
 ```sql
--- Step 1: Add local_datetime column
+-- Step 1: Drop old columns
 ALTER TABLE audio_files
-ADD COLUMN local_datetime TIMESTAMP WITH TIME ZONE;
+DROP COLUMN IF EXISTS local_date,
+DROP COLUMN IF EXISTS time_block,
+DROP COLUMN IF EXISTS local_datetime;
 
--- Step 2: Migrate existing data (copy recorded_at to local_datetime)
-UPDATE audio_files
-SET local_datetime = recorded_at
-WHERE local_datetime IS NULL;
-
--- Step 3: Make local_datetime NOT NULL
-ALTER TABLE audio_files
-ALTER COLUMN local_datetime SET NOT NULL;
-
--- Step 4: Drop old columns
-ALTER TABLE audio_files
-DROP COLUMN local_date,
-DROP COLUMN time_block;
-
--- Step 5: Drop old indexes
+-- Step 2: Drop old indexes
 DROP INDEX IF EXISTS idx_audio_files_device_date;
 DROP INDEX IF EXISTS idx_audio_files_device_date_block;
-
--- Step 6: Create new index
-CREATE INDEX IF NOT EXISTS idx_audio_files_local_datetime
-  ON public.audio_files USING btree (device_id, local_datetime DESC);
+DROP INDEX IF EXISTS idx_audio_files_local_datetime;
 ```
 
 ### インストールと起動
@@ -739,18 +716,18 @@ graph LR
     A[iOSデバイス] -->|WAVファイル + metadata JSON| B[Vault API]
     B -->|1. metadata検証| C{検証OK?}
     C -->|No| D[エラーレスポンス]
-    C -->|Yes| E[タイムスロット計算<br/>S3パス用のみ]
-    E -->|ローカル時間 → S3パス| F[S3アップロード]
-    F -->|files/device/date/timeslot/audio.wav| G[S3バケット]
+    C -->|Yes| E[UTC変換<br/>秒単位精度のパス生成]
+    E -->|HH-MM-SS形式| F[S3アップロード]
+    F -->|files/device/date/HH-MM-SS/audio.wav| G[S3バケット]
     F -->|メタデータ保存| H[Supabase]
-    H -->|device_id, recorded_at<br/>local_datetime, file_path| I[audio_files テーブル]
-    B -->|成功レスポンス + timezone_info| A
+    H -->|device_id, recorded_at, file_path| I[audio_files テーブル]
+    B -->|成功レスポンス| A
 ```
 
 **⚠️ 重要な変更（2025-11-11）:**
-- タイムスロット（30分単位）は**S3パス生成のみ**に使用
-- データベースには `local_datetime`（個別タイムスタンプ）を保存
-- 下流処理（Features API、Aggregator API）は `local_datetime` を使用
+- S3パスは秒単位精度（`HH-MM-SS` 形式）で生成
+- データベースには `recorded_at`（UTC）のみを保存
+- 下流処理（Features API、Aggregator API）は `recorded_at` を使用してデータを取得
 
 ## 🔧 開発・デバッグ
 
