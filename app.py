@@ -284,16 +284,49 @@ async def upload_file(
         )
         
         # recorded_atは既にmetadataから取得済み
-        
+
+        # Get device timezone to calculate local_date
+        try:
+            device_result = supabase_client.table("devices").select("timezone").eq(
+                "device_id", device_id
+            ).execute()
+
+            if not device_result.data or len(device_result.data) == 0:
+                print(f"⚠️ Warning: Device {device_id} not found in devices table, using UTC")
+                device_timezone_str = "UTC"
+            else:
+                device_timezone_str = device_result.data[0].get("timezone")
+                if not device_timezone_str:
+                    print(f"⚠️ Warning: Device {device_id} has no timezone set, using UTC")
+                    device_timezone_str = "UTC"
+
+            # Convert recorded_at to device timezone and extract local_date
+            device_tz = pytz.timezone(device_timezone_str)
+            local_dt = recorded_at.astimezone(device_tz)
+            local_date = local_dt.strftime('%Y-%m-%d')
+
+            print(f"📊 Local date calculation:")
+            print(f"   UTC: {recorded_at}")
+            print(f"   Timezone: {device_timezone_str}")
+            print(f"   Local: {local_dt}")
+            print(f"   local_date: {local_date}")
+
+        except Exception as e:
+            print(f"⚠️ Error calculating local_date: {e}")
+            print(f"   Falling back to UTC date")
+            local_date = recorded_at.strftime('%Y-%m-%d')
+
         # Register metadata to Supabase audio_files table
         # recorded_at: Primary key (UTC timestamp)
+        # local_date: Local date based on device timezone
         audio_file_data = {
             "device_id": device_id,
             "recorded_at": recorded_at.isoformat(),
+            "local_date": local_date,
             "file_path": s3_key,
             "transcriptions_status": determine_initial_status(device_id, recorded_at)
         }
-        
+
         # Supabaseへの挿入
         result = supabase_client.table("audio_files").insert(audio_file_data).execute()
         
@@ -303,6 +336,7 @@ async def upload_file(
             "s3_key": s3_key,
             "device_id": device_id,
             "recorded_at": recorded_at.isoformat(),  # ユーザーのローカル時間を返す
+            "local_date": local_date,  # 追加: ローカル日付
             "file_size_bytes": file_size,
             "method": "s3_upload",
             "timezone_info": recorded_at.strftime("%z") if recorded_at.tzinfo else "unknown"
