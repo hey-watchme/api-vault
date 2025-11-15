@@ -329,7 +329,7 @@ async def upload_file(
             "device_id": device_id,
             "recorded_at": recorded_at.isoformat(),
             "local_date": local_date,
-            "local_time": local_time,
+            "local_time": local_time.isoformat(),  # Convert datetime to ISO string
             "file_path": s3_key,
             "transcriptions_status": determine_initial_status(device_id, recorded_at)
         }
