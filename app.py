@@ -285,7 +285,7 @@ async def upload_file(
         
         # recorded_atは既にmetadataから取得済み
 
-        # Get device timezone to calculate local_date
+        # Get device timezone to calculate local_date and local_time
         try:
             device_result = supabase_client.table("devices").select("timezone").eq(
                 "device_id", device_id
@@ -300,29 +300,36 @@ async def upload_file(
                     print(f"⚠️ Warning: Device {device_id} has no timezone set, using UTC")
                     device_timezone_str = "UTC"
 
-            # Convert recorded_at to device timezone and extract local_date
+            # Convert recorded_at to device timezone and extract local_date and local_time
             device_tz = pytz.timezone(device_timezone_str)
             local_dt = recorded_at.astimezone(device_tz)
             local_date = local_dt.strftime('%Y-%m-%d')
+            # local_time is timestamp without time zone - remove timezone info
+            local_time = local_dt.replace(tzinfo=None)
 
-            print(f"📊 Local date calculation:")
+            print(f"📊 Local date/time calculation:")
             print(f"   UTC: {recorded_at}")
             print(f"   Timezone: {device_timezone_str}")
             print(f"   Local: {local_dt}")
             print(f"   local_date: {local_date}")
+            print(f"   local_time: {local_time}")
 
         except Exception as e:
-            print(f"⚠️ Error calculating local_date: {e}")
-            print(f"   Falling back to UTC date")
+            print(f"⚠️ Error calculating local_date/local_time: {e}")
+            print(f"   Falling back to UTC date/time")
             local_date = recorded_at.strftime('%Y-%m-%d')
+            # Fallback: use UTC time without timezone
+            local_time = recorded_at.replace(tzinfo=None)
 
         # Register metadata to Supabase audio_files table
         # recorded_at: Primary key (UTC timestamp)
         # local_date: Local date based on device timezone
+        # local_time: Local datetime based on device timezone
         audio_file_data = {
             "device_id": device_id,
             "recorded_at": recorded_at.isoformat(),
             "local_date": local_date,
+            "local_time": local_time,
             "file_path": s3_key,
             "transcriptions_status": determine_initial_status(device_id, recorded_at)
         }
