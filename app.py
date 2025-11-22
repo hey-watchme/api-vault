@@ -34,6 +34,8 @@ import pytz
 from dotenv import load_dotenv
 import json
 from dateutil import parser as date_parser
+from pydub import AudioSegment
+import tempfile
 
 # .envファイルを読み込む
 load_dotenv()
@@ -90,6 +92,56 @@ if SUPABASE_URL and SUPABASE_KEY:
         print(f"⚠️ Supabase client initialization failed: {e}")
         # テスト環境などでは継続可能にする
         supabase_client = None
+
+# =========================================
+# Audio Conversion Utility
+# =========================================
+def convert_m4a_to_wav(file_content: bytes, original_filename: str) -> tuple[bytes, str]:
+    """
+    Convert M4A audio to WAV format with WatchMe specifications.
+
+    Args:
+        file_content: M4A file content
+        original_filename: Original filename (for logging)
+
+    Returns:
+        tuple: (wav_content, content_type)
+
+    Raises:
+        Exception: If conversion fails
+    """
+    print(f"🔄 Converting M4A to WAV: {original_filename}")
+
+    try:
+        with tempfile.NamedTemporaryFile(suffix='.m4a', delete=False) as temp_m4a:
+            temp_m4a.write(file_content)
+            temp_m4a_path = temp_m4a.name
+
+        with tempfile.NamedTemporaryFile(suffix='.wav', delete=False) as temp_wav:
+            temp_wav_path = temp_wav.name
+
+        audio = AudioSegment.from_file(temp_m4a_path, format='m4a')
+
+        # Convert to WatchMe specifications: 16kHz, mono, 16-bit
+        audio = audio.set_frame_rate(16000)
+        audio = audio.set_channels(1)
+        audio = audio.set_sample_width(2)  # 2 bytes = 16-bit
+
+        audio.export(temp_wav_path, format='wav')
+
+        with open(temp_wav_path, 'rb') as f:
+            wav_content = f.read()
+
+        os.unlink(temp_m4a_path)
+        os.unlink(temp_wav_path)
+
+        print(f"✅ Conversion successful: M4A ({len(file_content)} bytes) -> WAV ({len(wav_content)} bytes)")
+
+        return wav_content, 'audio/wav'
+
+    except Exception as e:
+        print(f"❌ M4A to WAV conversion failed: {str(e)}")
+        raise Exception(f"Audio conversion failed: {str(e)}")
 
 # =========================================
 # デバイススキップ機能
@@ -268,19 +320,33 @@ async def upload_file(
         # ファイルサイズ制限チェック（100MB）
         file_content = await file.read()
         file_size = len(file_content)
-        
+
         if file_size > 100 * 1024 * 1024:  # 100MB
             raise HTTPException(
                 status_code=413,
                 detail="File size exceeds limit (100MB)"
             )
-        
+
+        # Determine file format and convert if necessary
+        filename = file.filename or "unknown"
+        file_extension = filename.lower().split('.')[-1]
+
+        if file_extension == 'm4a':
+            print(f"📊 M4A file detected: {filename}")
+            file_content, content_type = convert_m4a_to_wav(file_content, filename)
+        elif file_extension == 'wav':
+            print(f"📊 WAV file detected: {filename}")
+            content_type = 'audio/wav'
+        else:
+            print(f"⚠️ Unknown file format: {file_extension}, assuming WAV")
+            content_type = 'audio/wav'
+
         # S3へアップロード
         s3_client.put_object(
             Bucket=S3_BUCKET_NAME,
             Key=s3_key,
             Body=file_content,
-            ContentType='audio/wav'
+            ContentType=content_type
         )
         
         # recorded_atは既にmetadataから取得済み
