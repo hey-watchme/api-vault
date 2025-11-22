@@ -7,6 +7,7 @@ WORKDIR /app
 # システムパッケージを更新（必要に応じて）
 RUN apt-get update && apt-get install -y --no-install-recommends \
     gcc \
+    ffmpeg \
     && rm -rf /var/lib/apt/lists/*
 
 # 依存関係ファイルをコピー
