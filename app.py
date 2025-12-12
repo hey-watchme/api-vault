@@ -144,53 +144,6 @@ def convert_m4a_to_wav(file_content: bytes, original_filename: str) -> tuple[byt
         raise Exception(f"Audio conversion failed: {str(e)}")
 
 # =========================================
-# デバイススキップ機能
-# =========================================
-def determine_initial_status(device_id: str, recorded_at) -> str:
-    """
-    Determine initial processing status (pending or skipped)
-
-    Args:
-        device_id: Device ID
-        recorded_at: datetime object with timezone info
-
-    Returns:
-        'pending' or 'skipped'
-    """
-    # Extract hour from recorded_at
-    hour = recorded_at.hour
-
-    # Debug output
-    print(f"📊 SKIP check: device_id={device_id}, hour={hour}")
-    print(f"   SKIP_ENABLED={SKIP_ENABLED}")
-    print(f"   SKIP_DEVICE_IDS={SKIP_DEVICE_IDS}")
-    print(f"   SKIP_HOURS={SKIP_HOURS}")
-
-    # If skip feature is disabled, always return pending
-    if not SKIP_ENABLED:
-        print(f"   → Skip feature disabled, returning pending")
-        return 'pending'
-
-    # If device is not in skip list, return pending
-    if device_id not in SKIP_DEVICE_IDS:
-        print(f"   → Device {device_id} not in skip list, returning pending")
-        return 'pending'
-
-    # If SKIP_HOURS is empty, do not skip
-    if not SKIP_HOURS:
-        print(f"   → SKIP_HOURS is empty, returning pending")
-        return 'pending'
-
-    # Check if hour is in skip hours
-    if hour in SKIP_HOURS:
-        print(f"   ✅ Skip target: hour={hour} is in SKIP_HOURS")
-        print(f"   → Returning 'skipped'")
-        return 'skipped'
-    else:
-        print(f"   → hour={hour} is not in skip hours, returning pending")
-        return 'pending'
-
-# =========================================
 # ヘルスチェックエンドポイント
 # =========================================
 @app.get("/health")
@@ -396,8 +349,7 @@ async def upload_file(
             "recorded_at": recorded_at.isoformat(),
             "local_date": local_date,
             "local_time": local_time.isoformat(),  # Convert datetime to ISO string
-            "file_path": s3_key,
-            "transcriptions_status": determine_initial_status(device_id, recorded_at)
+            "file_path": s3_key
         }
 
         # Supabaseへの挿入
@@ -477,9 +429,6 @@ async def get_audio_files(
             file_path,
             local_date,
             time_block,
-            transcriptions_status,
-            behavior_features_status,
-            emotion_features_status,
             created_at
         """)
         
