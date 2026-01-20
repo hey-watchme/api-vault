@@ -334,11 +334,10 @@ async def upload_file(
             print(f"   local_time: {local_time}")
 
         except Exception as e:
-            print(f"⚠️ Error calculating local_date/local_time: {e}")
-            print(f"   Falling back to UTC date/time")
-            local_date = recorded_at.strftime('%Y-%m-%d')
-            # Fallback: use UTC time without timezone
-            local_time = recorded_at.replace(tzinfo=None)
+            print(f"❌ ERROR calculating local_date/local_time: {e}")
+            print(f"   Device {device_id} has invalid timezone configuration")
+            # Raise error instead of silent UTC fallback
+            raise ValueError(f"Failed to calculate local_date/local_time for device {device_id}: {e}")
 
         # Register metadata to Supabase audio_files table
         # recorded_at: Primary key (UTC timestamp)
