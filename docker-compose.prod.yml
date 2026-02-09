@@ -33,7 +33,7 @@ services:
           memory: 2G
         reservations:
           cpus: '0.5'
-          memory: 512M
+          memory: 128M
 
 networks:
   watchme-network:
